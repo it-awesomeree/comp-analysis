@@ -7,22 +7,26 @@
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [File Structure](#file-structure)
-3. [Page Architecture — Shopee MY Table](#page-architecture--shopee-my-table)
-4. [Page Architecture — AI Analysis Dashboard](#page-architecture--ai-analysis-dashboard)
-5. [Component Deep Dive — grouped-rows.tsx](#component-deep-dive--grouped-rowstsx)
-6. [Component Deep Dive — product-row.tsx](#component-deep-dive--product-rowtsx)
-7. [Component Deep Dive — table-header.tsx](#component-deep-dive--table-headertsx)
-8. [Component Deep Dive — Shared Components](#component-deep-dive--shared-components)
-9. [API Layer](#api-layer)
-10. [Data Flow](#data-flow)
-11. [Key Logic & Calculations](#key-logic--calculations)
-12. [Type Definitions](#type-definitions)
-13. [UI Features & Interactions](#ui-features--interactions)
-14. [Product Lifecycle & State Transitions](#product-lifecycle--state-transitions)
-15. [Export Functionality](#export-functionality)
-16. [Database Tables](#database-tables)
-17. [Caching Strategy](#caching-strategy)
+2. [Visual Layout — Table Structure](#visual-layout--table-structure)
+3. [Visual Layout — Expand/Collapse Hierarchy](#visual-layout--expandcollapse-hierarchy)
+4. [Complete Column Reference](#complete-column-reference)
+5. [Business Rules & Display Logic](#business-rules--display-logic)
+6. [File Structure](#file-structure)
+7. [Page Architecture — Shopee MY Table](#page-architecture--shopee-my-table)
+8. [Page Architecture — AI Analysis Dashboard](#page-architecture--ai-analysis-dashboard)
+9. [Component Deep Dive — grouped-rows.tsx](#component-deep-dive--grouped-rowstsx)
+10. [Component Deep Dive — product-row.tsx](#component-deep-dive--product-rowtsx)
+11. [Component Deep Dive — table-header.tsx](#component-deep-dive--table-headertsx)
+12. [Component Deep Dive — Shared Components](#component-deep-dive--shared-components)
+13. [API Layer](#api-layer)
+14. [Data Flow](#data-flow)
+15. [Key Logic & Calculations](#key-logic--calculations)
+16. [Type Definitions](#type-definitions)
+17. [UI Features & Interactions](#ui-features--interactions)
+18. [Product Lifecycle & State Transitions](#product-lifecycle--state-transitions)
+19. [Export Functionality](#export-functionality)
+20. [Database Tables](#database-tables)
+21. [Caching Strategy](#caching-strategy)
 
 ---
 
@@ -33,6 +37,316 @@ The Comp Analysis feature allows users to compare our Shopee products against co
 There are two main entry points:
 - **Shopee MY Table** (`/analytics/table/shopee-my`) — The primary comp analysis table with full filtering, sorting, pagination, and 3-level grouped display
 - **Comp Analysis Dashboard** (`/comp-analysis`) — AI-powered analysis using Google Gemini 2.0 Flash to compare products with images and structured data
+
+---
+
+## Visual Layout — Table Structure
+
+The table has 7 color-coded column groups arranged left to right. The first 6 columns (Product Identity group) are **frozen/sticky** — they stay visible when scrolling horizontally.
+
+```
+FROZEN (sticky)                                    SCROLLABLE -->
+|                                                  |
+|  Product Identity (#6B6560)                      |  Pricing & Profit (#788C5D)
+|  ┌──────────┬──────┬────────┬──┬───────────┬───┐ |  ┌──────────┬────────┬───────────┬────────┬──────────┬────────┐
+|  | Category | Shop | Prod   |  | MY        | S |  |  | MY Price | Cofund | Shopee    | Profit | Profit   | ISR %  |
+|  |          |      | ID     |  | Product   | K |  |  |          | Voucher| Discounted|        | Margin % |        |
+|  |          |      |        |  |           | U |  |  |          |        | Price     |        |          |        |
+|  └──────────┴──────┴────────┴──┴───────────┴───┘ |  └──────────┴────────┴───────────┴────────┴──────────┴────────┘
+|                                                  |
+                                                      Inventory (#C17A3C)
+                                                      ┌────────────┬───────────┬──────────────┐
+                                                      | Projected  | Lost      | SiteGiant    |
+                                                      | Stockout   | Value     | Sales        |
+                                                      └────────────┴───────────┴──────────────┘
+
+                                                      Sales & Shopee (#6A9BCC)
+                                                      ┌──────────┬──────────┬──────────┬──────────┬──────────┬────────┐
+                                                      | SG Sales | SG Var   | Shopee   | SP Sales | SP Var   | MY     |
+                                                      | Value    | Sold %   | Sales    | Value    | Sold %   | Stock  |
+                                                      └──────────┴──────────┴──────────┴──────────┴──────────┴────────┘
+
+                                                      Advertising (#D97757)
+                                                      ┌──────────┬────────────┬──────┬──────────┐
+                                                      | Visitors | Conversion | ROAS | Ads      |
+                                                      |          | Rate       |      | Spend    |
+                                                      └──────────┴────────────┴──────┴──────────┘
+
+                                                      Competitors (#9A7D6E)
+                                                      ┌────────────┬────────┬──────┬──────────┬───────┬───────┬─────────┬──────┬──────┐
+                                                      | Similarity | Reason | Date | COMP     | COMP  | COMP  | COMP    | COMP | Date |
+                                                      |            |        | Comp | Product  | Price | Sales | Monthly | Stock| Scr  |
+                                                      └────────────┴────────┴──────┴──────────┴───────┴───────┴─────────┴──────┴──────┘
+
+                                                      Notes & Actions (#908E85)
+                                                      ┌──────────────┬───────────┬─────────┐
+                                                      | Bot Remarks  | MK Remark | Actions |
+                                                      └──────────────┴───────────┴─────────┘
+```
+
+---
+
+## Visual Layout — Expand/Collapse Hierarchy
+
+The table uses a 3-level hierarchy. Each product group can expand in two directions: **MY** (our variations) or **COMP** (competitor groups). These are mutually exclusive — opening one closes the other.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ LEVEL 1: Product Group Row                          BG: #FAF9F5        │
+│ ┌──────────┐ ┌──────┐ ┌────┐ ┌─────────────────────┐ ┌──────────────┐ │
+│ │ Category │ │ Shop │ │ ID │ │ "Product Name ABC"  │ │ [MY] [COMP]  │ │
+│ │ (VVIP)   │ │      │ │    │ │ (aggregated metrics) │ │  toggle btns │ │
+│ └──────────┘ └──────┘ └────┘ └─────────────────────┘ └──────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+       │                                        │
+       │ Click [MY]                             │ Click [COMP]
+       ▼                                        ▼
+┌──────────────────────────────────┐    ┌──────────────────────────────────┐
+│ LEVEL 2a: MY Variation           │    │ LEVEL 2b: COMP Product Group     │
+│ BG: #F4F3EE                      │    │ BG: #F0ECE5                      │
+│ Border: 3px orange (#D97757)     │    │ Border: 3px blue (#6A9BCC)       │
+│                                  │    │                                  │
+│ ┌─ Variation "Color - Red" ────┐ │    │ ┌─ Comp Product "Rival X" ────┐ │
+│ │  SKU: ABC-RED                │ │    │ │  Shop: CompetitorShop        │ │
+│ │  Price: RM29.90              │ │    │ │  Similarity: 85% ❌          │ │
+│ │  Stock: 150                  │ │    │ │  Price: RM25.90              │ │
+│ │  [▶ expand if has comp]      │ │    │ │  Sales: 1,234                │ │
+│ └──────────────────────────────┘ │    │ │  [▶ expand variations]       │ │
+│                                  │    │ └──────────────────────────────┘ │
+│ ┌─ Variation "Color - Blue" ───┐ │    │                                  │
+│ │  SKU: ABC-BLU                │ │    │ ┌─ Comp Product "Brand Y" ────┐ │
+│ │  Price: RM29.90              │ │    │ │  Similarity: 92% ✅          │ │
+│ │  Stock: 80                   │ │    │ │  ...                         │ │
+│ │  (no competitors = no ▶)     │ │    │ └──────────────────────────────┘ │
+│ └──────────────────────────────┘ │    │                                  │
+└──────────────────────────────────┘    │ ┌─ Comp Product "Store Z" ────┐ │
+                                        │ │  (max 3 groups shown)        │ │
+       │ Click [▶] on variation         │ └──────────────────────────────┘ │
+       ▼                                └──────────────────────────────────┘
+┌──────────────────────────────────┐           │ Click [▶] on comp product
+│ LEVEL 3: Competitor Rows         │           ▼
+│ (under MY Variation)             │    ┌──────────────────────────────────┐
+│ BG: alternating                  │    │ LEVEL 3: COMP Variations         │
+│ #FAF9F5 / #F4F3EE               │    │ BG: #EAE5DC                      │
+│                                  │    │ Border: 3px gray (#B0AEA5)       │
+│ Uses ProductRow component        │    │                                  │
+│ Top 3 + ties by monthly sales    │    │ ┌─ Variation "Size S" ─────────┐ │
+│                                  │    │ │  Price: RM22.90              │ │
+│ ┌─ Comp #1 (highest sales) ───┐ │    │ │  Stock: 45                   │ │
+│ │  Monthly Sales: 500          │ │    │ │  (side-by-side image comp)   │ │
+│ └──────────────────────────────┘ │    │ └──────────────────────────────┘ │
+│ ┌─ Comp #2 ───────────────────┐ │    │                                  │
+│ │  Monthly Sales: 300          │ │    │ ┌─ Variation "Size M" ─────────┐ │
+│ └──────────────────────────────┘ │    │ │  Price: RM22.90              │ │
+│ ┌─ Comp #3 ───────────────────┐ │    │ │  Stock: 30                   │ │
+│ │  Monthly Sales: 200          │ │    │ └──────────────────────────────┘ │
+│ └──────────────────────────────┘ │    └──────────────────────────────────┘
+│ ┌─ Comp #4 (tied with #3) ───┐ │
+│ │  Monthly Sales: 200          │ │
+│ └──────────────────────────────┘ │
+└──────────────────────────────────┘
+```
+
+**Key rules:**
+- MY and COMP toggles are **mutually exclusive** per product group
+- Closing a parent also closes all its children
+- Variations with competitors are sorted **first** (above those without)
+- Expand button (▶) is **hidden** if variation has no competitors
+
+---
+
+## Complete Column Reference
+
+### OUR Product Columns
+
+| # | Column Name | Source Field | DB Column | Format | Appears On | Notes |
+|---|-------------|-------------|-----------|--------|------------|-------|
+| 1 | **Category** | `sourceType` | `source_type` | Badge (VVIP/VIP/Links Input/New Item/Uncategorized) | L1, L2a | L1: select dropdown (editable). L2b: text label (read-only). Priority: VVIP > VIP > LINKS_INPUT > NEW_ITEMS |
+| 2 | **Shop** | `ourShop.name` | `shop_name` | Clickable link text | L1, L2b | Shows our shop at L1, comp shop at L2b |
+| 3 | **Product ID** | `extractShopeeIds(ourProduct.url).product_id` | Extracted from `our_link` | Numeric string | L1, L2a, L2b | Extracted from Shopee URL pattern `/product/{shop_id}/{product_id}` |
+| 4 | **Select** | (UI state) | — | Checkbox | L1 | For bulk operations (delete, send to fix, etc.) |
+| 5 | **MY Product** | `ourProduct.name` | `product_name` | Text + external link icon + image preview + description icon | L1, L2a | L1: product name. L2a: variation name badge. Clickable to copy. |
+| 6 | **SKU** | `sku` or `ourProduct.sku` | `sku` | Text (inline editable) | L1 (empty), L2a | Click to edit. Enter to save, Escape to cancel. |
+| 7 | **MY Price** | `ourProduct.price` | `our_price` | `RM{value.toFixed(2)}` | L1 (text), L2a (numeric) | L1 shows `priceText` from enrichment, L2a shows numeric formatted |
+| 8 | **Cofund Voucher** | `cofundVoucherLabel` | Enriched field | Text label | L1, L2a | From server-side enrichment |
+| 9 | **Shopee Discounted Price** | `shopeeDiscountedPrice` | Enriched field | `RM{value}` | L1, L2a | From server-side enrichment |
+| 10 | **Profit** | `groupMetrics.profit` (L1) / `variationMetrics.profit` (L2a) | Calculated | `{value.toFixed(2)}` | L1, L2a | Calculated server-side from price - cost |
+| 11 | **Profit Margin %** | `groupMetrics.profitMargin` / `variationMetrics.profitMargin` | Calculated | `{value.toFixed(2)}%` | L1, L2a | Calculated server-side |
+| 12 | **ISR %** | `groupMetrics.isrPercent` / `variationMetrics.isrPercent` | Calculated | `{value.toLocaleString()}%` | L1, L2a | ISR = (monthly sales / current stock) * 100, deduped by SKU |
+| 13 | **Projected Stockout Date** | `groupMetrics.stockoutProjectedDateMs` / `variationMetrics` | `stockout_projected_date` | `DD/MM/YY` (Asia/KL timezone) | L1, L2a | Earliest stockout across variations at L1 |
+| 14 | **Lost Value** | `groupMetrics.stockoutLostValue` / `variationMetrics` | `stockout_lost_value` | `RM {value.toLocaleString()}` | L1, L2a | Total lost value across variations at L1 |
+| 15 | **SiteGiant Sales** | `salesTier` via `resolveSalesNumber()` | `shopee_sales` table | Integer count | L1, L2a | Uses latest `date_taken` row, NOT max or sum |
+| 16 | **SG Sales Value** | `groupMetrics.sgSalesValueTotal` / `variationMetrics.sgSalesValueDisplay` | `shopee_sales` table | Currency string | L1 (total), L2a (per-var) | Aggregated at L1 |
+| 17 | **SG Variation Sold %** | `variationMetrics.sgVariationPctDisplay` | Calculated | Percentage string | L2a only | Per-variation metric |
+| 18 | **Shopee Sales** | `shopeeSalesTier` via `resolveSalesNumber()` | `shopee_sales` table | Integer count | L1, L2a | Uses latest `date_taken` row |
+| 19 | **SP Sales Value** | `groupMetrics.spSalesValueTotal` / `variationMetrics.shopeeSalesValueDisplay` | `shopee_sales` table | Currency string | L1 (total), L2a (per-var) | Aggregated at L1 |
+| 20 | **SP Variation Sold %** | `variationMetrics.spVariationPctDisplay` | Calculated | Percentage string | L2a only | Per-variation metric |
+| 21 | **MY Stock** | `ourShop.stock` | `our_stock` | Integer | L1, L2a | From latest scrape |
+| 22 | **Visitors** | `groupMetrics.visitorsTotal` / `variationMetrics.visitors` | `ads_visitors` | `{value.toLocaleString()}` | L1 (total), L2a (per-var) | Advertising metric, latest `date_taken` |
+| 23 | **Conversion Rate** | `groupMetrics.convRateAvg` / `variationMetrics.convRate` | `ads_conversion_rate` | `{value.toFixed(4)}` | L1 (avg), L2a (per-var) | Weighted average at L1 |
+| 24 | **ROAS** | `groupMetrics.roasAvg` / `variationMetrics.roas` | `roas` | `{value.toFixed(4)}` | L1 (avg), L2a (per-var) | Return on Ad Spend |
+| 25 | **Ads Spend** | `groupMetrics.adsSpendTotal` / `variationMetrics.adsSpend` | `ads_spend` | `{value.toFixed(2)}` | L1 (total), L2a (per-var) | Total advertising spend |
+
+### Competitor Columns
+
+| # | Column Name | Source Field | DB Column | Format | Appears On | Notes |
+|---|-------------|-------------|-----------|--------|------------|-------|
+| 26 | **Similarity** | `productSimilarity.score` (L2b) / `variationSimilarity.score` (L3) | `product_similarity_score` / `variation_similarity_score` | Icon: ✅ (>=90) / ❌ (<90) / `-` (null) | L2b, L3 | Clickable ❌ opens exclusion dialog if score < 90 and reason exists |
+| 27 | **Reason** | `productSimilarity.reason` / `variationSimilarity.reason` | `product_similarity_reason` / `variation_similarity_reason` | Text (strikethrough if excluded) | L2b, L3 | Why the products don't match. Shows "-" if no reason. |
+| 28 | **Date Compared** | `productSimilarity.datetime` / `variationSimilarity.datetime` | `product_similarity_datetime` | Formatted date | L2b, L3 | When the bot last compared |
+| 29 | **COMP Product** | `competitorProduct.name` | `comp_product` | Text + external link + image preview + description icon | L2b, L3 | L2b: product name. L3: variation name badge. |
+| 30 | **COMP Price** | `competitorProduct.price` | `comp_price` | `RM{value.toFixed(2)}` (L3) / text (L2b) | L2b (text), L3 (numeric) | L2b shows `priceText`, L3 shows formatted numeric |
+| 31 | **COMP Sales** | `competitorProduct.sales` | `comp_sales` | Integer | L2b | Lifetime sales count |
+| 32 | **COMP Monthly Sales** | `competitorProduct.monthlySales` or `competitorProduct.monthlySalesDisplay` | `comp_monthly_sales` | Integer or display string | L2b | Key sorting metric for top 3 competitors |
+| 33 | **COMP Stock** | `competitorProduct.stock` or `competitorShop.stock` | `comp_stock` | Integer | L3 | Per-variation stock level |
+| 34 | **Date Scraped** | `dateScraped` | `date_scraped` | Date string | L2b | When data was last scraped |
+
+### Metadata & Action Columns
+
+| # | Column Name | Source Field | DB Column | Format | Appears On | Notes |
+|---|-------------|-------------|-----------|--------|------------|-------|
+| 35 | **Bot Remarks** | `automatedRemarks` + computed tokens | `automated_remarks` | Text + colored badge tokens (OSH, OSLTC, etc.) | L3 | Green badges = advantages, Red badges = issues. Auto-generated from price/sales/stock/rating comparisons. |
+| 36 | **MK Remark** | `mkRemark` | `mk_remark` | Text (inline editable) | L3 | Click to edit, blur/Enter to save |
+| 37 | **Actions** | (UI state) | — | Action buttons | L3 | Normal: Copy, Send to Fix, Select Comp, Delete. Modes vary by tab. |
+
+### Exclusion Indicator Column (within Similarity)
+
+| Indicator | Condition | Display |
+|-----------|-----------|---------|
+| Orange Filter icon | `hasProductExclusions === true` | Small orange filter icon before similarity score |
+| Orange Filter icon | `hasVariationExclusions === true` | Same, for variation-level |
+| Strikethrough reason | Exclusion active + reason matches excluded list | Reason text shown with line-through |
+
+### Level Appearance Legend
+
+- **L1** = Level 1 (Product Group Row)
+- **L2a** = Level 2a (MY Variation Row)
+- **L2b** = Level 2b (COMP Product Group Row)
+- **L3** = Level 3 (COMP Variation Row / ProductRow leaf)
+
+---
+
+## Business Rules & Display Logic
+
+### 1. Top 3 Competitors + Ties
+
+**At Level 2b (Competitor Product Groups):**
+- All competitor rows are grouped by (shop name, product name)
+- Groups sorted by **maximum monthly sales** within each group (descending)
+- Only the **top 3 groups** are shown
+
+**At Level 3 (Competitor Variations under MY Variation):**
+- Sort all competitor rows by monthly sales descending
+- Find the value of the 3rd-place competitor
+- Include ALL competitors with monthly sales >= 3rd place value
+- This means 4+ rows can appear if there are ties
+- Hard cap at 10 rows maximum
+
+### 2. Competitor Filtering Rules
+
+| Rule | Behavior |
+|------|----------|
+| `"(no comp name)"` | Filtered OUT from display — never shown |
+| Competitors with monthly sales = 0 | SHOWN (previously hidden, changed in PR #494) |
+| Latest scrape date only | Only competitors from the most recent `date_scraped` per product are shown |
+| Duplicate competitors | Deduped by (our_link, comp_link, comp_variation, our_variation), keeps latest `date_taken` |
+
+### 3. Variation Display Rules
+
+| Rule | Behavior |
+|------|----------|
+| Variations WITH competitors | Sorted FIRST (appear at top of variation list) |
+| Variations WITHOUT competitors | Sorted AFTER (appear at bottom) |
+| Expand button (▶) | HIDDEN if variation has no competitors |
+| Variation key | Uses **SKU** when available (normalized: lowercase, alphanumeric only). Falls back to **variation name** (normalized: lowercase, collapsed whitespace) |
+| Duplicate variations | If two variations have the same normalized SKU, they are merged into one group |
+
+### 4. Similarity Score Rules
+
+| Score | Icon | Clickable? | Action |
+|-------|------|------------|--------|
+| `null` (no score) | `-` (gray dash) | No | — |
+| >= 90% | Green ✅ CheckCircle2 | No | — |
+| < 90% + reason exists + `isShopeeMy` + callback provided | Red ❌ XCircle (hover shows Ban icon) | **Yes** | Opens AlertDialog to add exclusion |
+| < 90% + no reason or no callback | Red ❌ XCircle | No | — |
+
+### 5. Exclusion Behavior
+
+When a user clicks to exclude a comparison:
+
+1. **AlertDialog** opens showing the similarity reason and comp product details
+2. On confirm, **POST** to `/api/products/similarity-exclusion` with:
+   - `our_link`, `comp_link`, `sku`
+   - `exclusion_type`: "product" or "variation"
+   - `reason`: the similarity reason text
+3. Backend:
+   - Inserts/updates `Shopee_Comp_Similarity_Exclusions` table
+   - Sets `has_product_exclusions = 1` or `has_variation_exclusions = 1` on matching `Shopee_Comp` rows
+   - Max 50 exclusion reasons per record
+4. UI refreshes → orange Filter icon appears next to the score
+5. **Exclusions do NOT hide the competitor** — they mark it for reprocessing. The bot will ignore the excluded difference on its next run, potentially improving the similarity score.
+
+### 6. Category Priority
+
+Used to determine which category badge to show when a product group has variations from multiple categories:
+
+| Priority | Category | Badge Color |
+|----------|----------|-------------|
+| 4 (highest) | VVIP | Orange border (#D97757) |
+| 3 | VIP | Blue border (#6A9BCC) |
+| 2 | LINKS_INPUT | Green border (#788C5D) |
+| 1 (lowest) | NEW_ITEMS | Gray border (#B0AEA5) |
+| 0 | Uncategorized | Light gray border (#D0CEC6) |
+
+If all rows in a group have no category (NONE), shows "Uncategorized". Otherwise shows the highest priority found.
+
+### 7. Sales Data Resolution
+
+All sales-related columns use the **latest `date_taken` row** — NOT the maximum value, NOT a sum.
+
+```
+resolveSalesNumber(rows, picker):
+  Find row with latest date_taken (fallback: dateScraped)
+  Return picker(latestRow) converted to number
+```
+
+This applies to: SiteGiant Sales, SG Sales Value, Shopee Sales, SP Sales Value, Visitors, Conversion Rate, ROAS, Ads Spend.
+
+### 8. Product Name Resolution
+
+The displayed product name at Level 1 comes from the **most recently scraped row** in the group, not the first row encountered. This ensures renamed products show the current name.
+
+### 9. MY vs COMP Expand — Mutually Exclusive
+
+- Each product group has two toggle buttons: **[MY]** and **[COMP]**
+- Opening MY closes COMP and all its children for that group
+- Opening COMP closes MY and all its children for that group
+- Only one direction can be expanded per group at a time
+
+### 10. Advertising Data at Group Level
+
+At Level 1 (product group), advertising metrics are **aggregated** across all variations:
+- Visitors: **sum** of all variations
+- Ads Spend: **sum** of all variations
+- Conversion Rate: **weighted average** (weighted by visitors per variation)
+- ROAS: **simple average** across variations with data
+
+### 11. Automated Remark Tokens
+
+Generated client-side by comparing our product vs competitor:
+
+| Token | Label | Color | Condition |
+|-------|-------|-------|-----------|
+| `OSH` | Our Sales Are Higher | Green | our sales > comp sales |
+| `OSLTC` | Our Sales Lower Than Comp | Red | our sales < comp sales |
+| `WHMS` | We Have More Stock | Green | our stock > comp stock |
+| `OSLC` | Our Stock Lower Than Comp | Red | our stock < comp stock |
+| `ORBTC` | Our Rating Better Than Comp | Green | our rating > comp rating |
+| `ORLTC` | Our Rating Lower Than Comp | Red | our rating < comp rating |
+| `IP` | Increase Price | Green | our price < comp price |
+| `DP` | Decrease Price | Red | our price > comp price |
+| `COOF` | Comp Out Of Stock | Green | comp stock = 0 |
+| `OVOOS` | Our Variation Is Out Of Stock | Red | our stock = 0 |
 
 ---
 
