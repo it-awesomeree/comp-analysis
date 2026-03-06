@@ -17,7 +17,7 @@ This script is **Job 4** of a 7-script nightly Shopee Competitive Analysis pipel
 
 **In simple terms:** This script answers the question *"How many units of each product variation did we sell on Shopee each day, and what's the rolling sales total?"* It fetches real Shopee orders, breaks them down by product variation per day, and writes rolling sales + revenue windows back to the competitive analysis table.
 
-**Critical distinction:** This script populates the `shopee_var_sales_*` and `shopee_var_value_*` column families (sourced from Shopee's own order API). These are **independent** from the `our_sales_*` columns populated by Job 5 (sourced from SiteGiant's multi-channel OMS).
+**What it writes:** This script populates the `shopee_var_sales_*` and `shopee_var_value_*` column families on `Shopee_Comp`, sourced directly from Shopee's own order API.
 
 ---
 
@@ -165,7 +165,7 @@ def model_patch_normalize_variation(variation):
     return " ".join(text.split())
 ```
 
-Replaces `, - _ . / & ( )` with space, then collapses whitespace. This is more aggressive than Script 2's normalization (which only replaces `, - _`).
+Replaces `, - _ . / & ( )` with space, then collapses whitespace.
 
 **API call:** `GET /api/v2/product/get_model_list` with 0.15s rate limiting per call.
 
