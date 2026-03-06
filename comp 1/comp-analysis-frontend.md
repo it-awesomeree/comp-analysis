@@ -1,7 +1,5 @@
 # Comp Analysis — Frontend Documentation
 
-**Branch**: `main` (merged from `fix/dup-var-and-date-scraped-main` via PR #494)
-**Date**: March 2026
 **Purpose**: Comprehensive documentation of the frontend architecture, file structure, data flow, UI components, and business logic of the Shopee MY Competitive Analysis feature.
 
 ---
