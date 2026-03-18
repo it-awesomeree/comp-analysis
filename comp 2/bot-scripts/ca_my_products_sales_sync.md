@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|-------|
 | **Script** | `ca_my_products_sales_sync.py` |
-| **Pipeline Position** | #2 of 4 (job ID: `sales_sync`) |
+| **Pipeline Position** | #2 of 3 (job ID: `sales_sync`) |
 | **Location** | `C:\Users\Admin\Desktop\ca_sg\ca_my_products_sales_sync.py` |
 | **VM** | VM TT (`DESKTOP-KD0HLJU`, port 65504) |
 | **Pipeline Timeout** | 2 hours |

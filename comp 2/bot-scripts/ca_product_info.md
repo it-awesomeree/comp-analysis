@@ -4,12 +4,12 @@
 
 | Attribute | Value |
 |---|---|
-| **Script** | `ca_product_info.py` (renamed from `ca_my_products_info_refresh.py`) |
+| **Script** | `ca_product_info.py` (current VM TT version; renamed from `ca_my_products_info_refresh.py`) |
 | **Location (VM TT)** | `C:\Users\Admin\Desktop\ca_sg\ca_product_info.py` |
-| **Local source** | `C:\Users\User\Desktop\work\comp analysis\mine\vvip\comp 2\ca_product_info.py` |
-| **Lines** | 1,154 |
+| **Local source** | `C:\Users\User\Documents\Playground\repos\melinda-workspace\scripts\comp-analysis-pipeline\ca_my_products_info_refresh.py` |
+| **Lines** | ~1.2k |
 | **Language** | Python 3.13 |
-| **Pipeline Position** | Job #1 of 4 in `ca_sg_pipeline.py` (runs first) |
+| **Pipeline Position** | Job #1 of 3 in `ca_sg_pipeline.py` (runs first) |
 | **Pipeline Task** | `ca_product_info_daily` (Windows Task Scheduler, daily at midnight MYT) |
 | **Timeout** | 2 hours (set by pipeline) |
 | **Typical Runtime** | ~5-6 minutes |
@@ -22,8 +22,9 @@
 Refreshes **our own product catalog** in `AllBots.Shopee_My_Products` by:
 1. **Discovering** new product links from `Shopee_Comp_Data` (VVIP sheet only) that don't yet exist in `Shopee_My_Products`
 2. **Refreshing** all existing active records by fetching live data from Shopee Partner API
+3. **Backfilling** missing `sheet_name` values for active rows using normalized reference maps from `Shopee_Comp_Data`, then falling back to existing `Shopee_My_Products` rows
 
-It does **NOT** touch sales, ads, or similarity columns — those are handled by scripts #2, #3, and #4 in the pipeline.
+It does **NOT** touch sales or similarity columns — those are handled by scripts #2 and #3 in the pipeline.
 
 ---
 
@@ -87,6 +88,7 @@ Both use `root` user with `DB_PASSWORD` environment variable.
 - **Purpose:** Finds `our_link` URLs in Comp Data that have NO matching row in My Products yet (LEFT JOIN ... IS NULL pattern)
 - **Returns 3 maps:** `new_shop_items` (shop_id → {item_id: our_link}), `sheet_name_map` (our_link → sheet_name), `region_map` (our_link → region)
 - **URL parsing:** Extracts `shop_id` and `item_id` from each `our_link` via regex `/product/(\d+)/(\d+)` (line 637)
+- **Current VM TT note:** `normalize_our_link()` strips trailing slashes before lookup, and the current script also loads authoritative `sheet_name` / `region` reference maps from both `Shopee_Comp_Data` and existing `Shopee_My_Products` rows before processing.
 
 ### 5D. `AllBots.Shopee_My_Products` — Existing Active Records
 - **Function:** `load_active_items_by_shop()` (line 725)
@@ -132,7 +134,7 @@ Both use `root` user with `DB_PASSWORD` environment variable.
 | `our_variation_images` | `get_model_list` API → option image lookup (stored as JSON array) |
 | `shop_name` | From `STORE_NAMES` dict or fallback `"shop_{id}"` |
 | `status` | Hardcoded `"active"` (line 871) |
-| `sheet_name` | From `sheet_name_map` (Comp Data discovery), can be NULL |
+| `sheet_name` | From `sheet_name_map` / post-refresh backfill, can be NULL before the final backfill pass |
 
 > Note: `created_at` is **NOT** in the INSERT column list — it relies on MySQL column DEFAULT (`CURRENT_TIMESTAMP`).
 
@@ -164,8 +166,7 @@ Both use `root` user with `DB_PASSWORD` environment variable.
 - `shopee_var_sales_*`, `shopee_var_value_*`, `shopee_var_sales_last_synced` — script #2
 - `sitegiant_sales_value_*` — script #2
 - `discounted_price`, `voucher_name` — script #2
-- `ads_spend_*`, `roas_*`, `ads_visitors_*`, `ads_conv_rate_*`, `ads_metrics_last_synced` — script #3
-- `product_similarity_*`, `variation_similarity_*`, `*_excluded`, `has_*_exclusions` — script #4
+- `product_similarity_*`, `variation_similarity_*`, `*_excluded`, `has_*_exclusions` — script #3 (comp_variation_matcher)
 - `automated_remarks`, `user_remarks`, `Delete_Remark`, `last_page`, `original_page` — admin/manual
 
 ### 6B. `requestDatabase.ShopeeTokens` — Token Refresh
@@ -178,6 +179,12 @@ Both use `root` user with `DB_PASSWORD` environment variable.
       expires_at = %s, updated_at = NOW()
   WHERE shop_id = %s
   ```
+
+### 6C. `AllBots.Shopee_My_Products` — Sheet-Name Backfill
+- **Function:** `backfill_missing_sheet_names()` (current VM TT version)
+- **Operation:** `UPDATE ... JOIN` against normalized `our_link` keys and resolved sheet names from `Shopee_Comp_Data`, then a second pass against existing `Shopee_My_Products` rows as fallback
+- **When:** After all store refreshes complete
+- **Effect:** Fills active rows with null/blank `sheet_name` values and updates `updated_at`
 
 ---
 
@@ -207,20 +214,24 @@ main()
   |-- 2. fetch_tokens_by_shop_id() -> READ requestDatabase.ShopeeTokens (all tokens)
   |-- 3. Connect to AllBots DB (single connection for entire run)
   |
-  |-- 4. discover_new_links_from_comp_data()
+  |-- 4. load_sheet_name_reference_maps()
+  |     +-- READ normalized refs from Shopee_Comp_Data and Shopee_My_Products
+  |     +-- Prefer VVIP > VIP > LINKS_INPUT > NEW_ITEMS when resolving sheet_name
+  |
+  |-- 5. discover_new_links_from_comp_data()
   |     +-- READ Shopee_Comp_Data LEFT JOIN Shopee_My_Products
   |        WHERE status='active' AND sheet_name='VVIP' AND m.id IS NULL
-  |     +-- Parse shop_id/item_id from our_link URLs via regex
-  |     +-- Returns: new_shop_items, sheet_name_map, region_map
+  |     +-- Parse shop_id/item_id from normalized our_link URLs
+  |     +-- Returns: new_shop_items, discovered_sheet_name_map, discovered_region_map
   |
-  |-- 5. load_active_items_by_shop()
+  |-- 6. load_active_items_by_shop()
   |     +-- READ Shopee_My_Products WHERE status='active'
   |     +-- Returns: shop_items (by shop_id), existing_region_map
   |
-  |-- 6. Merge region maps (comp_data priority, existing as fallback)
-  |-- 7. Merge new discoveries into shop_items (existing items + new items combined)
+  |-- 7. Merge reference maps (discovered refs only fill gaps in the authoritative maps)
+  |-- 8. Merge new discoveries into shop_items (existing items + new items combined)
   |
-  |-- 8. FOR EACH shop_id in shop_items:
+  |-- 9. FOR EACH shop_id in shop_items:
   |     |-- Skip if no token for this shop
   |     |-- ensure_connection() -> reconnect AllBots DB if stale
   |     |-- process_store_refresh():
@@ -240,7 +251,11 @@ main()
   |     |   +-- Each flush -> batch_upsert_product_info() -> INSERT ON DUPLICATE KEY UPDATE
   |     +-- Log store results (items_processed, rows_updated)
   |
-  +-- 9. Log final summary + close DB connection
+  |-- 10. backfill_missing_sheet_names()
+  |     +-- UPDATE active rows with blank sheet_name using normalized our_link keys
+  |     +-- Fallback to existing Shopee_My_Products references when needed
+  |
+  +-- 11. Log final summary + close DB connection
 ```
 
 ---
@@ -275,8 +290,7 @@ main()
 | **Shopee var sales** | Script #2 — sales_sync | `shopee_var_sales_7d/14d/30d/60d/90d`, `shopee_var_value_7d/14d/30d/60d/90d`, `shopee_var_sales_last_synced` |
 | **SiteGiant sales** | Script #2 — sales_sync | `sitegiant_sales_value_7/14/30/60/90days` |
 | **Pricing** | Script #2 — sales_sync | `discounted_price`, `voucher_name` |
-| **Ads metrics** | Script #3 — ads_metrics | `ads_spend_7d/14d/30d/60d/90d`, `roas_7d/14d/30d/60d/90d`, `ads_visitors_7d/14d/30d/60d/90d`, `ads_conv_rate_7d/14d/30d/60d/90d`, `ads_metrics_last_synced` |
-| **Similarity** | Script #4 — variation_matcher | `product_similarity_score/reason/datetime`, `variation_similarity_score/reason/datetime`, `product_similarity_excluded`, `variation_similarity_excluded`, `has_product_exclusions`, `has_variation_exclusions` |
+| **Variation matching** | Script #3 — comp_variation_matcher | `product_similarity_score/reason/datetime`, `variation_similarity_score/reason/datetime`, `product_similarity_excluded`, `variation_similarity_excluded`, `has_product_exclusions`, `has_variation_exclusions` |
 | **Admin/manual** | Web app / manual | `automated_remarks`, `user_remarks`, `Delete_Remark`, `last_page`, `original_page` |
 
 ---
@@ -311,13 +325,12 @@ main()
 
 ## 12. Downstream Dependencies
 
-**This script MUST run first** because scripts #2, #3, and #4 depend on `Shopee_My_Products` rows existing:
+**This script MUST run first** because scripts #2 and #3 depend on `Shopee_My_Products` rows existing:
 
 | Downstream Script | Depends On (from this script) |
 |---|---|
 | #2 `ca_my_products_sales_sync.py` | `our_link`, `our_item_id`, `our_shop_id` to sync sales |
-| #3 `ca_shopee_ads_metrics.py` | `our_shop_id`, `our_item_id` to scrape ads dashboards |
-| #4 `ca_comp_variation_matcher.py` | `our_variation`, `product_name` for AI matching against competitor data |
+| #3 `ca_comp_variation_matcher.py` | `our_variation`, `product_name`, `sku` for AI matching against competitor data |
 
 If this script fails, downstream scripts either process stale data or skip new products entirely.
 
@@ -330,7 +343,7 @@ If this script fails, downstream scripts either process stale data or skip new p
 | Null SKUs for out-of-stock variations | Expected | Shopee API returns null `model_sku` for depleted stock; COALESCE preserves existing SKU |
 | GCP Cloud SQL firewall | Fixed (Mar 10) | VM TT IP `151.240.33.25` was not whitelisted; script failed from Mar 6-10 |
 | `sheet_name` varchar(50) in AllBots | Low risk | Current values ("VVIP") are well under 50 char limit |
-| Docstring vs code mismatch | Minor | Script docstring (line 35) lists `status` and `sheet_name` as "NOT touched" but code does write them on INSERT and COALESCE on UPDATE |
+| Docstring vs code mismatch | Minor | Script docstring (line 35) still understates `sheet_name` handling; code writes `status`, `sheet_name`, and backfills missing `sheet_name` values after refresh |
 | Store name map completeness | Low risk | `STORE_NAMES` has 28 stores; any shop not in the map defaults to `"shop_{id}"` for display |
 
 ---
@@ -352,4 +365,4 @@ If this script fails, downstream scripts either process stale data or skip new p
 
 ---
 
-*Last verified: 2026-03-11 from source at `C:\Users\User\Desktop\work\comp analysis\mine\vvip\comp 2\ca_product_info.py` (1,154 lines)*
+*Last verified: 2026-03-18 from current VM TT source at `C:\Users\Admin\Desktop\ca_sg\ca_product_info.py` (~1.2k lines)*

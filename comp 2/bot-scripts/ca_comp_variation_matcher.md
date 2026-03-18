@@ -18,16 +18,15 @@ AI-powered bot that matches **competitor product variations** to **our product v
 
 *Source: `ca_sg_pipeline.py` — not from this script itself*
 
-This is **Script #4 (final)** in the `ca_sg_pipeline.py` pipeline, triggered by the `ca_product_info_daily` Windows Scheduled Task at **midnight daily**.
+This is **Script #3 (final)** in the `ca_sg_pipeline.py` pipeline, triggered by the `ca_product_info_daily` Windows Scheduled Task at **midnight daily**.
 
 | # | Script ID | Script File | Timeout | Purpose |
 |---|-----------|-------------|---------|---------|
 | 1 | `product_info` | `ca_product_info.py` | 2h | Refresh product info from Shopee API |
 | 2 | `sales_sync` | `ca_my_products_sales_sync.py` | 2h | URL normalization + sales sync |
-| 3 | `ads_metrics` | `ca_shopee_ads_metrics.py` | 3h | Ads metrics scraping (Selenium) |
-| **4** | **`comp_variation_matcher`** | **`ca_comp_variation_matcher.py`** | **2h** | **AI variation matching (`--live`)** |
+| **3** | **`comp_variation_matcher`** | **`ca_comp_variation_matcher.py`** | **2h** | **AI variation matching (`--live`)** |
 
-The pipeline runs scripts sequentially with **60s rest** between each. Each script gets **1 retry** with a **120s delay** before retry. Script #4 is invoked with the `--live` flag.
+The pipeline runs scripts sequentially with **60s rest** between each. Each script gets **1 retry** with a **120s delay** before retry. Script #3 is invoked with the `--live` flag.
 
 ---
 
@@ -339,7 +338,7 @@ Since `DRY_RUN = False` by default, all runs are live unless the module-level co
 - `difflib.SequenceMatcher`
 - `typing` (Dict, List, Optional, Set, Tuple, Any)
 
-**No Selenium** -- this is a pure data processing + API script (unlike Script #3 `ca_shopee_ads_metrics.py`).
+**No Selenium** -- this is a pure data processing + API script.
 
 ---
 
