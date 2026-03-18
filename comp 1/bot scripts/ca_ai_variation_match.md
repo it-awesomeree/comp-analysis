@@ -384,6 +384,8 @@ Log levels used:
 | Phase 3 | — | 5,467 | |
 | **Total runtime** | | | **~8.5 minutes** |
 
+**Note**: Phase 0 was disabled later on March 5, 2026. The 1,435 deletions above are from the last active run before the disablement.
+
 ---
 
 ## Dry Run Mode
