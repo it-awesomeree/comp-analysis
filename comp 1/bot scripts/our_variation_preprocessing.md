@@ -1,8 +1,8 @@
 # our_variation_preprocessing.py — Comprehensive Documentation
 
 > **Script Location:** `VM3:C:\Users\Admin\Desktop\Shopee Comp My links Api\our_variation_preprocessing.py`
-> **Language:** Python 3.13 | **Lines:** 1,422 | **VM:** VM3 (most loaded — 5 bots)
-> **Last verified:** 2026-03-06
+> **Language:** Python 3.13 | **Lines:** 1,478 | **VM:** VM3 (current 5-script chain)
+> **Last verified:** 2026-03-18
 
 ---
 
@@ -12,7 +12,7 @@ This script is a **preprocessing step** in the Shopee Competitive Analysis (CA) 
 
 ### Why it exists
 
-The downstream script (`updated_ca_ai_variation_match.py`) needs `our_variation` populated to resolve `our_model_id` and complete price-comparison logic. Without `our_variation`, the CA pipeline cannot determine which specific product variant (size, color, etc.) of **our** product corresponds to a competitor's listed variation — making price comparison impossible at the SKU level.
+The downstream script (`ca_ai_variation_match.py`) needs `our_variation` populated to resolve `our_model_id` and complete price-comparison logic. Without `our_variation`, the CA pipeline cannot determine which specific product variant (size, color, etc.) of **our** product corresponds to a competitor's listed variation, which makes price comparison impossible at the SKU level.
 
 ### What it solves
 
@@ -29,22 +29,24 @@ But `our_variation` (which of our product's variants matches that competitor row
 
 ## 2. Pipeline Position
 
-This script runs as **Job #2 of 7** in the `scheduler.py` sequential pipeline on VM3.
+This script runs as **Job #2 of 5** in the `scheduler.py` sequential pipeline on VM3, launched by the daily 4:00 PM Task Scheduler trigger.
 
 | Job # | Script | Purpose |
 |-------|--------|---------|
 | 1 | `ca_shopee_listing_to_db.py` | Scrape competitor listings into DB |
 | **2** | **`our_variation_preprocessing.py`** | **Backfill `our_variation` (this script)** |
-| 3 | `updated_ca_ai_variation_match.py` | Resolve `our_model_id` using `our_variation` |
-| 4 | `ca_shopee_sales.py` | Fetch sales data |
-| 5 | `shopee_comp_my.py` | MY competitive comparison |
-| 6 | `ca_chatgpt_analysis.py` | AI-driven analysis |
-| 7 | `shopee_comp_upload.py` | Upload results |
+| 3 | `ca_ai_variation_match.py` | Resolve `our_model_id` using `our_variation` |
+| 4 | `shopee_comp_shopee_sales.py` | Fetch sales data |
+| 5 | `Shopee-mylinks-sales-data-merged.py` | Product info + SiteGiant sales |
+
+Jobs 6-7 (`ca_shopee_ads_metrics.py`, `ca_similarity_check.py`) are scheduled out of the current daily chain.
+
 
 ### Trigger chain
-```
+```text
 Windows Task Scheduler
-  -> chain_today_pipeline.ps1 (waits for ResumePipeline2)
+  -> 4:00 PM daily trigger
+    -> chain_today_pipeline.ps1 (waits for ResumePipeline2)
     -> scheduler.py (sequential job runner with retry logic)
       -> Job #2: our_variation_preprocessing.py (via preprocess_wrapper.py)
 ```

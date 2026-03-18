@@ -1,7 +1,7 @@
 # ca_ai_variation_match.py — Documentation
 
 **Location**: VM3 — `C:\Users\Admin\Desktop\Shopee Comp My links Api\ca_ai_variation_match.py`
-**Size**: 64,340 bytes | 1,807 lines | Last modified: 2026-03-05 13:09:34
+**Size**: 64,715 bytes | 1,512 lines | Last modified: 2026-03-10 13:53:59
 **Language**: Python (self-contained, no local imports)
 **Dependencies**: `requests`, `mysql-connector-python`, `hmac`, `hashlib`, `json`, `re`, `os`, `time`, `datetime`, `logging`, `traceback`
 
@@ -12,6 +12,8 @@
 A **post-scrape data enrichment pipeline** for the Shopee MY Competitive Analysis (CA) system. Upstream scrapers populate the `AllBots.Shopee_Comp` table with raw competitor product data — messy URLs, free-text variation names, partial SKUs. This script runs after scraping to **resolve those messy fields into structured Shopee product identifiers** (shop_id, item_id, model_id, SKU, shop_name) so the CA dashboard can properly link competitor products to your own catalog.
 
 It uses **deterministic matching first** (exact variation/SKU lookups against the Shopee Partner API), then falls back to **OpenAI-powered fuzzy matching** (o4-mini) for ambiguous variation names that couldn't be resolved deterministically.
+
+On VM3, `scheduler.py` runs this as Job 3 of the current 5-script daily chain, started by the 4:00 PM Task Scheduler trigger.
 
 ---
 

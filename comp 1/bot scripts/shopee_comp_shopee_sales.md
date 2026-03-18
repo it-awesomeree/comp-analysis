@@ -1,7 +1,7 @@
 # `shopee_comp_shopee_sales.py` — Complete Script Documentation
 
 **Location:** `VM3 → C:\Users\Admin\Desktop\Shopee Comp My links Api\shopee_comp_shopee_sales.py`
-**Size:** 2,738 lines, 98,627 bytes | **Last modified:** 2026-03-02 09:32:10
+**Size:** 2,435 lines, 98,794 bytes | **Last modified:** 2026-03-06 04:18:29
 **Language:** Python (self-contained, no local imports)
 **Dependencies:** `mysql-connector-python`, `requests`, `hmac`, `hashlib`, `json`, `re`, `os`, `time`, `datetime`, `logging`, `threading`, `traceback`
 
@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-This script is **Job 4** of a 7-script nightly Shopee Competitive Analysis pipeline orchestrated by `scheduler.py` on VM3. It is a **3-phase data maintenance and synchronization utility** for the `AllBots.Shopee_Comp` table:
+This script is **Job 4** of the current 5-script daily Shopee Competitive Analysis pipeline orchestrated by `scheduler.py` on VM3. The chain starts from the daily 4:00 PM Task Scheduler trigger. It is a **3-phase data maintenance and synchronization utility** for the `AllBots.Shopee_Comp` table:
 
 1. **URL Normalization** — Canonicalizes messy Shopee product URLs into a standard format
 2. **Model Resolution** — Resolves model IDs by matching variation names/SKUs against the Shopee API
@@ -24,20 +24,19 @@ This script is **Job 4** of a 7-script nightly Shopee Competitive Analysis pipel
 ## 2. Pipeline Position & Data Dependencies
 
 ```
-scheduler.py (orchestrator, runs nightly via Windows Task Scheduler)
+scheduler.py (orchestrator, runs daily at 4:00 PM via Windows Task Scheduler)
 │
 ├─ Job 1: ca_shopee_listing_to_db.py          (SEED — imports listings)
 ├─ Job 2: our_variation_preprocessing.py       (backfills our_variation)
 ├─ Job 3: ca_ai_variation_match.py             (AI variation matching)
 ├─ Job 4: shopee_comp_shopee_sales.py          ← THIS SCRIPT
 ├─ Job 5: Shopee-mylinks-sales-data-merged.py  (product info + SiteGiant sales)
-├─ Job 6: ca_shopee_ads_metrics.py             (ads metrics)
-└─ Job 7: ca_similarity_check.py               (AI similarity scoring)
+└─ Jobs 6-7: scheduled out of the current chain (ads metrics and similarity)
 ```
 
 - **Depends on:** Jobs 1-3 must have populated `our_shop_id`, `our_item_id`, and `our_model_id` for this script's Phase 3 rolling update to match rows.
-- **Scheduling:** Triggered nightly via `scheduler.py`. Has a 6-hour safety timeout. On failure, retried up to 2 times (3 total attempts) with token refresh between retries.
-- **All 7 jobs run sequentially** with 5-minute gaps between them.
+- **Scheduling:** Triggered daily at 4:00 PM by Windows Task Scheduler via `scheduler.py`. Has a 6-hour safety timeout. On failure, retried up to 2 times (3 total attempts) with token refresh between retries.
+- **All 5 jobs run sequentially** with 5-minute gaps between them.
 
 ---
 

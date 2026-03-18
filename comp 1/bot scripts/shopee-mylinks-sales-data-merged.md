@@ -1,7 +1,7 @@
 # `Shopee-mylinks-sales-data-merged.py` — Complete Reference Documentation
 
 **Location:** `VM3: C:\Users\Admin\Desktop\Shopee Comp My links Api\Shopee-mylinks-sales-data-merged.py`
-**Size:** 81,274 bytes | 2,006 lines | Python 3.13
+**Size:** 85,958 bytes | 1,794 lines | Python 3.13 | **Last modified:** 2026-03-06 16:13:42
 **Target Table:** `AllBots.Shopee_Comp`
 **Database Host:** `34.142.159.230` (Google Cloud MySQL)
 **Dependencies:** `mysql-connector-python`, `requests` (all others are stdlib)
@@ -10,7 +10,7 @@
 
 ## 1. Purpose & Overview
 
-This script is the **core data enrichment pipeline for the `AllBots.Shopee_Comp` competitive analysis table**. It pulls product data and sales metrics from two separate external systems and writes them into a single database table, giving the Awesomeree team a unified view of their own Shopee MY product catalog enriched with live pricing, stock, and sales performance.
+This script is the **Job 5** of the current 5-script daily Shopee Competitive Analysis pipeline orchestrated by `scheduler.py` on VM3. The chain starts from the daily 4:00 PM Task Scheduler trigger. It is the core data enrichment pipeline for the `AllBots.Shopee_Comp` competitive analysis table. It pulls product data and sales metrics from two separate external systems and writes them into a single database table, giving the Awesomeree team a unified view of their own Shopee MY product catalog enriched with live pricing, stock, and sales performance.
 
 **Why it exists:** The `Shopee_Comp` table stores competitor and own-product links scraped from various sources (sheets categorized as VVIP, VIP, NEW_ITEMS, LINKS_INPUT, NONE). Those rows initially only contain a product URL and variation name. This script fills in everything else — product names, descriptions, prices, stock levels, SKUs, ratings, images, and time-bucketed sales counts — by calling the Shopee Partner API and SiteGiant order management API.
 
@@ -25,19 +25,18 @@ This script is the **core data enrichment pipeline for the `AllBots.Shopee_Comp`
 ## 2. Pipeline Position & Data Dependencies
 
 ```
-scheduler.py (orchestrator, runs nightly via Windows Task Scheduler)
+scheduler.py (orchestrator, runs daily at 4:00 PM via Windows Task Scheduler)
 │
 ├─ Job 1: ca_shopee_listing_to_db.py          (SEED — imports listings)
 ├─ Job 2: our_variation_preprocessing.py       (backfills our_variation)
 ├─ Job 3: ca_ai_variation_match.py             (AI variation matching)
 ├─ Job 4: shopee_comp_shopee_sales.py          (Shopee order sales sync)
 ├─ Job 5: Shopee-mylinks-sales-data-merged.py  ← THIS SCRIPT
-├─ Job 6: ca_shopee_ads_metrics.py             (ads metrics)
-└─ Job 7: ca_similarity_check.py               (AI similarity scoring)
+└─ Jobs 6-7: scheduled out of the current chain (ads metrics and similarity)
 ```
 
 - **Depends on:** Jobs 1–3 must have populated `our_link`, `our_variation`, `our_shop_id`, `our_item_id` for this script to find candidate rows and resolve models.
-- **Scheduling:** Triggered nightly via `scheduler.py`. Has a 6-hour safety timeout. On failure, retried up to 2 times (3 total attempts) with token refresh between retries.
+- **Scheduling:** Triggered daily at 4:00 PM by Windows Task Scheduler via `scheduler.py`. Has a 6-hour safety timeout. On failure, retried up to 2 times (3 total attempts) with token refresh between retries.
 
 ---
 

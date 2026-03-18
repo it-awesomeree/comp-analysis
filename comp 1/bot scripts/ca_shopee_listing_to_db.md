@@ -1,7 +1,7 @@
 # `ca_shopee_listing_to_db.py` — Complete Script Documentation
 
 **Location:** `VM3 → C:\Users\Admin\Desktop\Shopee Comp My links Api\ca_shopee_listing_to_db.py`
-**Size:** 813 lines, 34,616 bytes | **Last modified:** 2026-03-02
+**Size:** 871 lines, 37,596 bytes | **Last modified:** 2026-03-13 16:50:30
 **Python:** 3.13 (`C:\Users\Admin\AppData\Local\Programs\Python\Python313\python.exe`)
 **Dependencies:** `mysql-connector-python`, `requests`
 
@@ -9,32 +9,31 @@
 
 ## 1. Purpose
 
-This script is **Job 1 (the SEED job)** of a 7-script nightly Shopee Competitive Analysis pipeline orchestrated by `scheduler.py` on VM3. Its sole purpose is to sync all **live product listings** from **28 Awesomeree Shopee stores** into the `AllBots.Shopee_Comp` database table by calling the Shopee Partner API.
+This script is **Job 1 (the SEED job)** of the current 5-script daily Shopee Competitive Analysis pipeline orchestrated by `scheduler.py` on VM3. Windows Task Scheduler starts the chain at 4:00 PM Asia/Kuala_Lumpur. Its sole purpose is to sync all **live product listings** from **28 Awesomeree Shopee stores** into the `AllBots.Shopee_Comp` database table by calling the Shopee Partner API.
 
-It populates the **"our product"** side of the competitive analysis table (columns prefixed `our_*`). Every other script in the pipeline depends on the seed rows this script creates. Without it, downstream scripts have nothing to enrich — no variation matching, no sales data, no ads metrics, no competitor similarity scoring.
+It populates the **"our product"** side of the competitive analysis table (columns prefixed `our_*`). Every other active script in the pipeline depends on the seed rows this script creates. Without it, the active downstream jobs have nothing to enrich - no variation matching or sales data.
 
-**In simple terms:** This script answers the question *"What products do we currently have live across all our Shopee stores?"* and writes that answer to the database every night, adding only products it hasn't seen before.
+**In simple terms:** This script answers the question *"What products do we currently have live across all our Shopee stores?"* and writes that answer to the database every day, adding only products it hasn't seen before.
 
 ---
 
 ## 2. Pipeline Position & Data Dependencies
 
 ```
-scheduler.py (orchestrator, runs nightly via Windows Task Scheduler)
+scheduler.py (orchestrator, runs daily at 4:00 PM via Windows Task Scheduler)
 │
 ├─ Job 1: ca_shopee_listing_to_db.py          ← THIS SCRIPT (SEED)
 ├─ Job 2: our_variation_preprocessing.py       (backfills our_variation column)
 ├─ Job 3: ca_ai_variation_match.py             (AI variation matching)
 ├─ Job 4: shopee_comp_shopee_sales.py          (Shopee order sales sync)
 ├─ Job 5: Shopee-mylinks-sales-data-merged.py  (product info + SiteGiant sales)
-├─ Job 6: ca_shopee_ads_metrics.py             (ads metrics)
-└─ Job 7: ca_similarity_check.py               (AI similarity scoring)
+└─ Jobs 6-7: scheduled out of the current chain (ads metrics and similarity)
 ```
 
-- **Scheduling:** Triggered nightly by Windows Task Scheduler via `scheduler.py`. Has a 6-hour safety timeout. On failure, retried up to 2 times (3 total attempts) with token refresh between retries.
+- **Scheduling:** Triggered daily at 4:00 PM by Windows Task Scheduler via `scheduler.py`. Has a 6-hour safety timeout. On failure, retried up to 2 times (3 total attempts) with token refresh between retries.
 - **Boot recovery:** If VM3 reboots mid-pipeline, `boot_resume_pipeline.ps1` detects a checkpoint file and resumes from the last incomplete job.
 - **Chain recovery:** `chain_today_pipeline.ps1` waits for any resume to finish, then starts a fresh daily pipeline cycle.
-- **All 7 jobs run sequentially** with 5-minute gaps between them.
+- **All 5 jobs run sequentially** with 5-minute gaps between them.
 
 ---
 
@@ -115,7 +114,7 @@ scheduler.py (orchestrator, runs nightly via Windows Task Scheduler)
 | 1 | `requestDatabase.ShopeeTokens` | `UPDATE SET access_token, refresh_token, expires_at, updated_at` | On token refresh (403 recovery) | Own short-lived connection |
 | 2 | `AllBots.Shopee_Comp` | `INSERT INTO ... (21 columns) VALUES ... (executemany)` | Every 2,000 rows or end-of-store | Shared `allbots_conn` |
 
-**Critical behavior:** This script is **INSERT-only**. It **never updates** existing rows (no price/stock/sales updates). It **never deletes** rows. If a product's price or stock changes, this script will NOT reflect that — downstream scripts (Jobs 4-6) handle updates to existing rows.
+**Critical behavior:** This script is **INSERT-only**. It **never updates** existing rows (no price/stock/sales updates). It **never deletes** rows. If a product's price or stock changes, this script will NOT reflect that — downstream scripts (Jobs 4-5) handle updates to existing rows.
 
 ---
 
