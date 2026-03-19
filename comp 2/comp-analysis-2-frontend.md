@@ -385,11 +385,13 @@ ORDER BY FIELD(mp.product_name, ...phase1 order...)
 
 | Window | Our Sales Col | Shopee Sales Col | Shopee Value Col |
 |--------|--------------|-----------------|-----------------|
-| 7d | `sg_sales_7d` | `shopee_var_sales_7d` | `shopee_var_value_7d` |
-| 14d | `sg_sales_14d` | `shopee_var_sales_14d` | `shopee_var_value_14d` |
-| 30d | `sg_sales_30d` | `shopee_var_sales_30d` | `shopee_var_value_30d` |
-| 60d | `sg_sales_60d` | `shopee_var_sales_60d` | `shopee_var_value_60d` |
-| 90d | `sg_sales_90d` | `shopee_var_sales_90d` | `shopee_var_value_90d` |
+| 7d | `our_sales_7d` | `shopee_var_sales_7d` | `shopee_var_value_7d` |
+| 14d | `our_sales_14d` | `shopee_var_sales_14d` | `shopee_var_value_14d` |
+| 30d | `our_sales_30d` | `shopee_var_sales_30d` | `shopee_var_value_30d` |
+| 60d | `our_sales_60d` | `shopee_var_sales_60d` | `shopee_var_value_60d` |
+| 90d | `our_sales_90d` | `shopee_var_sales_90d` | `shopee_var_value_90d` |
+
+> **Note:** The DB also has `sitegiant_sales_value_*` columns, but the code uses `our_sales_*` columns instead (with `COALESCE(mp.our_sales_Xd, mp.our_sales)` as fallback).
 
 ### Count Cache
 
@@ -486,9 +488,9 @@ Pre-computed columns per `(status, product_name)` group:
 |----------------|---------|
 | **Identity** | `status`, `product_name`, `row_count` |
 | **Category** | `category_rank` (highest priority in group) |
-| **Our Sales** (per window) | `sg_sales_total_7d`, `sg_sales_total_14d`, `sg_sales_total_30d`, `sg_sales_total_60d`, `sg_sales_total_90d` |
+| **Our Sales** (per window) | `our_sales_total_7d`, `our_sales_total_14d`, `our_sales_total_30d`, `our_sales_total_60d`, `our_sales_total_90d` |
 | **Shopee Sales** (per window) | `sp_sales_total_7d` ... `sp_sales_total_90d` |
-| **Sales Values** (per window) | `sg_value_total_7d` ... `sg_value_total_90d`, `sp_value_total_7d` ... `sp_value_total_90d` |
+| **Sales Values** (per window) | `our_value_total_7d` ... `our_value_total_90d`, `sp_value_total_7d` ... `sp_value_total_90d` |
 | **Competitor** | `max_date_taken`, `min_comp_product`, `min_comp_price`, `max_comp_sales`, etc. |
 | **Metadata** | `updated_at` |
 
