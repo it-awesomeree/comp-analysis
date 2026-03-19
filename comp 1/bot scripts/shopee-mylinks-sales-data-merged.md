@@ -1,7 +1,7 @@
 # `Shopee-mylinks-sales-data-merged.py` — Complete Reference Documentation
 
 **Location:** `VM3: C:\Users\Admin\Desktop\Shopee Comp My links Api\Shopee-mylinks-sales-data-merged.py`
-**Size:** 100,552 bytes | 2,449 lines | Python 3.13 | **Last modified:** 2026-03-19 12:36:43
+**Size:** 103,765 bytes | 2,527 lines | Python 3.13 | **Last modified:** 2026-03-19 14:34:41
 **Target Table:** `AllBots.Shopee_Comp`
 **Database Host:** `34.142.159.230` (Google Cloud MySQL)
 **Dependencies:** `mysql-connector-python`, `requests` (all others are stdlib)
@@ -13,6 +13,7 @@
 - Verified against VM3 live file: `C:\Users\Admin\Desktop\Shopee Comp My links Api\Shopee-mylinks-sales-data-merged.py`
 - Scheduler context unchanged: Job #5 in the VM3 daily 4:00 PM chain
 - Critical live-script corrections:
+  - Afternoon re-sync confirms latest live timestamp is `2026-03-19 14:34:41`
   - SiteGiant token handling is now dynamic, with refresh flow and DB persistence in `requestDatabase.SitegiantToken` (row id `1`)
   - Added DB resilience helpers (`safe_db_connect`, `ensure_db_connection`) with session timeout hardening and periodic reconnect controls
   - SiteGiant retry logic now includes adaptive recursive batch splitting (`SG_ENABLE_ADAPTIVE_BATCH_SPLIT`, `SG_MIN_BATCH_SIZE`) for transient failures
@@ -64,7 +65,11 @@ scheduler.py (orchestrator, runs daily at 4:00 PM via Windows Task Scheduler)
 | `PATH_EXTRA_INFO` | `/api/v2/product/get_item_extra_info` | Rating, total sales |
 | `PATH_MODEL_LIST` | `/api/v2/product/get_model_list` | SKU, variation price, stock, variation images |
 | `SITEGIANT_CONFIG.base_url` | `https://opensgapi.sitegiant.co/api/v1` | SiteGiant API base |
-| `SITEGIANT_CONFIG.token` | `276118aa...` | SiteGiant static bearer token |
+| `SITEGIANT_TOKEN_TABLE` | `SitegiantToken` | Token persistence table in `requestDatabase` |
+| `SITEGIANT_TOKEN_ROW_ID` | `1` | Singleton row ID for current SiteGiant token |
+| `SITEGIANT_SECRET_KEY` | env `SITEGIANT_SECRET_KEY` (default present in script) | Used to sign SiteGiant token refresh requests |
+| `SITEGIANT_STORE_EMAIL` | env `SITEGIANT_STORE_EMAIL` (default present in script) | SiteGiant refresh payload |
+| `SITEGIANT_PARTNER_TOKEN` | env `SITEGIANT_PARTNER_TOKEN` (default present in script) | SiteGiant refresh payload |
 
 ### Database Connections
 
@@ -111,10 +116,17 @@ Password sourced from environment variable `DB_PASSWORD`.
 | `ENABLE_SITEGIANT_SALES` | `True` | Whether Phase 2 runs |
 | `DAYS_BACK` | `90` | How far back to fetch orders |
 | `TIME_PERIODS` | `[7, 14, 30, 60, 90]` | Sales aggregation time buckets |
+| `SG_BACKFILL_MISSING_DAYS` | `30` | Backfill recent rows that still have missing `sitegiant_sales_value_*` |
 | `PARALLEL_WORKERS` | `3` | Concurrent workers for order detail fetching |
 | `SG_BATCH_SIZE` | `100` | Orders per SiteGiant API page |
 | `SG_BATCH_DELAY` | `0.15` | Delay between parallel batch submissions |
 | `SG_REQUEST_TIMEOUT` | `90` | API request timeout (seconds) |
+| `SG_PROGRESS_HEARTBEAT_SECONDS` | `30` | Heartbeat interval while waiting on parallel futures |
+| `SG_ENABLE_ADAPTIVE_BATCH_SPLIT` | `True` | Recursively split failing large batches |
+| `SG_MIN_BATCH_SIZE` | `10` | Smallest split batch size |
+| `SG_STRICT_ABORT_ON_FAILED_BATCHES` | `True` | Abort writes if any batch in a window fails |
+| `SG_WRITE_ZERO_FOR_UNSEEN_SKUS` | `True` | Prevent stale non-zero values when SKU has no sales |
+| `SG_FUTURE_ORDER_GRACE_DAYS` | `1` | Tolerate minor clock drift, skip far-future orders |
 | `SG_MAX_RETRIES` | `3` | Retries per failed batch |
 | `SG_RETRY_BASE_DELAY` | `2` | Exponential backoff base (seconds) |
 
@@ -127,6 +139,9 @@ Password sourced from environment variable `DB_PASSWORD`.
 | `DB_LOCK_WAIT_TIMEOUT` | `120` | Session-level InnoDB lock wait (seconds) |
 | `DB_ADVISORY_LOCK_NAME` | `ShopeeCompSalesUpdate` | Prevents concurrent script runs |
 | `TMP_INSERT_CHUNK_SIZE` | `1000` | Batch size for temp table inserts |
+| `DB_RECONNECT_EVERY` | `100` | Periodic reconnect cadence to avoid stale DB sessions |
+| `DB_SESSION_NET_READ_TIMEOUT` | `120` | Session-level MySQL net read timeout |
+| `DB_SESSION_NET_WRITE_TIMEOUT` | `120` | Session-level MySQL net write timeout |
 
 ### Testing Knobs
 
@@ -147,7 +162,7 @@ Password sourced from environment variable `DB_PASSWORD`.
 
 ## 4. Main Execution Flow
 
-### `main()` (Line 1970)
+### `main()` (Line 2491)
 
 ```
 1. setup_logging()  →  stdout, INFO level, timestamped
@@ -170,9 +185,9 @@ This tells us the `our_sales_*d` columns were added after the initial table desi
 
 ## 5. Phase 1: Shopee Partner API Updates
 
-### `run_shopee_api_updates()` (Line 1605)
+### `run_shopee_api_updates()` (Line 2094)
 
-### 4a. Fetch Candidate Rows — `fetch_candidate_rows()` (Line 1097)
+### 4a. Fetch Candidate Rows — `fetch_candidate_rows()` (Line 1552)
 
 Two separate SQL queries, combined into one result set:
 
@@ -241,7 +256,7 @@ UPDATE AllBots.Shopee_Comp SET our_link=%s WHERE id=%s
 
 Each canonical URL is parsed via `parse_shop_item_from_canonical()` (line 429) using regex `shopee\.com\.my/product/(\d+)/(\d+)` to extract `(shop_id, item_id)`. Rows are grouped because multiple variations (different `our_variation` values) of the same product share one set of API calls.
 
-### 4d. Load Access Tokens — `fetch_tokens_by_shop_id()` (Line 238)
+### 4d. Load Access Tokens — `fetch_tokens_by_shop_id()` (Line 538)
 
 ```sql
 SELECT shop_id, access_token FROM requestDatabase.ShopeeTokens
