@@ -572,6 +572,180 @@ Raw DB rows
 
 ---
 
+## Competitor Product Display Logic
+
+### Step 1: Database — Fetch All Comp Rows
+
+The SQL returns ALL competitor rows via LEFT JOIN — no filtering at the SQL level:
+
+```sql
+LEFT JOIN Shopee_Comp_Data cd
+  ON cd.our_item_id_extracted = mp.our_item_id
+  AND cd.region = '<MY|SG>'
+```
+
+**Comp columns selected:**
+- `cd.comp_product` (name), `cd.comp_link` (URL), `cd.comp_variation`, `cd.comp_shop`
+- `cd.comp_price`, `cd.comp_product_price`, `cd.comp_sales`, `cd.comp_monthly_sales`
+- `cd.comp_rating`, `cd.comp_stock`, `cd.date_taken`
+
+No date/null filtering in SQL — all comp rows for each product are returned. Filtering and dedup happen server-side.
+
+### Step 2: Enrichment — Map to Product Objects
+
+Each raw DB row becomes one `Product` with competitor fields:
+
+| DB Column | Product Field |
+|-----------|--------------|
+| `comp_product` | `competitorProduct.name` |
+| `comp_shop` | `competitorProduct.shopName` |
+| `comp_variation` | `competitorProduct.variation` |
+| `comp_price` | `competitorProduct.price` (parsed to number) |
+| `comp_sales` | `competitorProduct.sales` |
+| `comp_monthly_sales` | `competitorProduct.monthlySales` |
+| `comp_stock` | `competitorProduct.stock` |
+| `comp_link` | `competitorProduct.url` |
+| `comp_main_images` | `competitorProduct.mainImages` |
+| `comp_variation_images` | `competitorProduct.variationImages` |
+
+### Step 3: Server-Side Dedup & Top-3 Selection
+
+**Function:** `limitAndDedupCompetitors()` in `shared-products-route.ts`
+
+```
+For each our-product group (keyed by ourProduct.url):
+  │
+  ├─ 1. Build compSalesMap:
+  │     Key = "shopName\0compName"
+  │     Value = max monthlySales among all rows for that comp product
+  │
+  ├─ 2. Top 3 + ties selection:
+  │     Sort comp products by monthlySales DESC
+  │     If ≤ 3 products → keep all
+  │     If > 3 → find 3rd-place sales value (cutoffSales)
+  │            → keep all products with sales ≥ cutoffSales
+  │
+  ├─ 3. Build compProductsForDisplay metadata:
+  │     Per surviving comp product:
+  │       - name, shopName, url, sales, monthlySales, rating
+  │       - All unique variations (deduped by name, case-insensitive)
+  │         with price, stock, dateScraped, variationImages
+  │
+  ├─ 4. Assign comp variations to our variations:
+  │     Uses Shopee_Variation_Match table (bot-managed matches)
+  │     Fallback: all comp variations → first our-variation
+  │
+  └─ 5. Attach compProductsForDisplay to every Product row in the group
+```
+
+### Step 4: UI Rendering — grouped-rows.tsx
+
+#### Building Competitor Groups (Level 2b)
+
+Two paths depending on whether server-side metadata exists:
+
+```
+Path A (preferred): compProductsForDisplay metadata exists
+  → buildCompGroupsFromDisplayMeta() reconstructs groups from server metadata
+  → Preserves server's top-3 selection and complete variation lists
+
+Path B (fallback): No metadata
+  → getQualifiedCompRows() runs client-side top-3 algorithm
+```
+
+#### `getQualifiedCompRows()` Client-Side Algorithm
+
+```
+For each our-variation:
+  │
+  ├─ 1. Filter out rows where comp name is empty or "(no comp name)"
+  │
+  ├─ 2. Group valid rows by comp product (key = "shopName\0compName")
+  │     Track maxSales per product group
+  │
+  ├─ 3. Top 3 + ties:
+  │     Rank products by maxSales DESC
+  │     Keep top 3 + any tied at 3rd place:
+  │       thirdSales = ranked[2].maxSales
+  │       keep all where index < 3 OR maxSales ≥ thirdSales
+  │
+  ├─ 4. Backfill: If a comp product survives top-3 on ANY our-variation,
+  │     include ALL its variations from ALL our-variations
+  │
+  └─ 5. Dedup by (shopName, compName, compVariation)
+        Keep row with highest monthlySales
+        Sort by monthlySales DESC
+```
+
+#### Filtering & Sorting for Display
+
+```
+visibleCompGroups = compGroups
+  .filter(cg => cg.name !== "(no comp name)")     // exclude unnamed
+  .filter(cg => !excludedCompKeys.has(key))        // exclude user-excluded
+  .sort((a, b) => maxMonthlySales(b) - maxMonthlySales(a))  // sort DESC
+  .slice(0, 3)                                     // hard cap at 3 visible
+```
+
+#### Level 2b — COMP Product Row Rendering
+
+| Element | Source | Display |
+|---------|--------|---------|
+| Shop name | `competitorProduct.shopName` | Clickable link (if URL available) |
+| Product ID | Extracted from `comp_link` | Numeric string |
+| Product name | `competitorProduct.name` | Text + external link + image preview + description |
+| Price | `competitorProduct.priceText` | Text (not formatted as RM) |
+| Sales | `competitorProduct.sales` | Integer (lifetime) |
+| Monthly sales | `competitorProduct.monthlySalesDisplay` | Formatted string with date context |
+| Date scraped | `dateScraped` | Date string |
+| Expand button | (UI state) | Eye/EyeOff toggle → opens Level 3 variations |
+
+#### Level 3 — COMP Variation Row Rendering
+
+| Element | Source | Display |
+|---------|--------|---------|
+| Variation name | `competitorProduct.variation` | Badge component |
+| Image | `competitorProduct.variationImages` | Side-by-side (MY variation vs COMP variation) |
+| Price | `competitorProduct.price` | `RM{value.toFixed(2)}` |
+| Stock | `competitorProduct.stock` | Integer |
+| Date scraped | `dateScraped` | Date string |
+| Sales columns | — | Intentionally blank (sales are product-level, not variation-level) |
+
+#### Expand/Collapse — Mutual Exclusion
+
+```
+State:
+  openGroups  (Set) — MY variations expanded (Level 2a)
+  openComp    (Set) — COMP products expanded (Level 2b)
+  openCompVar (Set) — COMP variations expanded (Level 3)
+
+handleToggleMy(gkey):
+  Open MY → closes COMP + all COMP children for this group
+  Close MY → closes all MY children
+
+handleToggleComp(gkey):
+  Open COMP → closes MY + all MY children for this group
+  Close COMP → closes all COMP children
+
+Key format for children: "${gkey}|||${variationKey}"
+```
+
+### Difference from Shopee MY (Comp 1)
+
+| Aspect | Shopee MY | VVIP / SG |
+|--------|-----------|-----------|
+| **Comp data source** | Same `Shopee_Comp` table (flat) | `Shopee_Comp_Data` via LEFT JOIN |
+| **JOIN key** | N/A (same table) | `cd.our_item_id_extracted = mp.our_item_id` (numeric, fast) |
+| **Region filter** | N/A | `cd.region = 'MY'` or `cd.region = 'SG'` on JOIN |
+| **Server-side top-3** | Same `limitAndDedupCompetitors()` | Same function |
+| **Client-side fallback** | Same `getQualifiedCompRows()` | Same function |
+| **UI rendering** | Same `grouped-rows.tsx` | Same component |
+| **Variation matching** | `Shopee_Variation_Match` table | Same table |
+
+The display logic is **identical** — only the data source differs.
+
+---
+
 ## Data Flow
 
 ### Complete Request Lifecycle
