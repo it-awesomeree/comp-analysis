@@ -1,7 +1,7 @@
 # ca_ai_variation_match.py — Documentation
 
 **Location**: VM3 — `C:\Users\Admin\Desktop\Shopee Comp My links Api\ca_ai_variation_match.py`
-**Size**: 64,715 bytes | 1,512 lines | Last modified: 2026-03-10 13:53:59
+**Size**: 57,838 bytes | 1,681 lines | Last modified: 2026-03-18 15:48:35
 **Language**: Python (self-contained, no local imports)
 **Dependencies**: `requests`, `mysql-connector-python`, `hmac`, `hashlib`, `json`, `re`, `os`, `time`, `datetime`, `logging`, `traceback`
 
@@ -16,6 +16,21 @@ It uses **deterministic matching first** (exact variation/SKU lookups against th
 On VM3, `scheduler.py` runs this as Job 3 of the current 5-script daily chain, started by the 4:00 PM Task Scheduler trigger.
 
 ---
+
+## Live Verification (2026-03-19)
+
+- Verified against VM3 live file: `C:\Users\Admin\Desktop\Shopee Comp My links Api\ca_ai_variation_match.py`
+- Scheduler context unchanged: Job #3 in the 4:00 PM VM3 pipeline
+- Critical documentation corrections from live code:
+  - Phase 1 URL patch is constrained to rows with `date_taken >= NOW() - INTERVAL 4 DAY`
+  - Phase 2 (`model_patch`) is date/sheet filtered:
+    - `VVIP` / `VIP` / `NEW_ITEMS`: 7 days
+    - `LINKS_INPUT`: 28 days
+  - Phase 2B (`ai_patch`) uses the same 7-day / 28-day filter window
+  - Phase 3 (`shop_name_patch`) also uses the same 7-day / 28-day filter window
+  - Older statements that Phase 2/2B run without date filters are no longer accurate
+  - Phase 0 zero-sales cleanup remains disabled in `main()`
+  - `DRY_RUN` constant is currently `False` in live code (despite stale comments implying otherwise)
 
 ## Architecture Overview
 
@@ -80,7 +95,7 @@ DELETE FROM AllBots.Shopee_Comp WHERE comp_monthly_sales = 0
 ```sql
 SELECT id, our_link, date_taken FROM Shopee_Comp
 WHERE date_taken IS NOT NULL
-  AND date_taken >= (NOW() - INTERVAL 10 DAY)
+  AND date_taken >= (NOW() - INTERVAL 4 DAY)
   AND our_link IS NOT NULL AND TRIM(our_link) <> ''
 ```
 
@@ -97,7 +112,7 @@ UPDATE Shopee_Comp SET our_link = %s WHERE id = %s
 - Path cleanup (trailing slashes, double slashes)
 - Extracts `shop_id` and `item_id` from the URL for downstream phases
 
-**Date filter**: Last 10 days only.
+**Date filter**: Last 4 days only.
 
 ---
 
@@ -121,7 +136,9 @@ ORDER BY date_taken DESC, id DESC
 LIMIT 50000
 ```
 
-**Important**: NO date range filter, NO sheet_name filter. Processes the entire table (up to 50K rows). This contradicts the function's docstring which claims sheet/date filtering.
+**Important (live script)**: Phase 2 now enforces sheet/date filtering:
+- `VVIP` / `VIP` / `NEW_ITEMS`: last 7 days
+- `LINKS_INPUT`: last 28 days
 
 **SQL Write** (conditional — only fills empty fields):
 ```sql
@@ -200,33 +217,15 @@ WHERE (shop_name IS NULL OR TRIM(shop_name) = '')
   AND our_shop_id IS NOT NULL AND our_shop_id <> 0
   AND date_taken IS NOT NULL
   AND ((sheet_name IN ('VVIP','VIP','NEW_ITEMS')
-        AND date_taken >= (NOW() - INTERVAL 10 DAY))
+        AND date_taken >= (NOW() - INTERVAL 7 DAY))
        OR (sheet_name = 'LINKS_INPUT'
            AND date_taken >= (NOW() - INTERVAL 28 DAY)))
 ```
 
-**Only phase with both sheet_name and date filters.**
+**Live note**: Phase 2, Phase 2B, and Phase 3 all enforce sheet/date windows in the current VM3 script.
 
-**SQL Write — Pass 1** (row-by-row loop):
-```sql
-UPDATE Shopee_Comp SET shop_name = %s WHERE id = %s
-```
-
-**SQL Write — Pass 2** (safety-net bulk JOIN, added in March 5 code update):
-```sql
-UPDATE Shopee_Comp sc
-JOIN requestDatabase.ShopeeTokens st ON sc.our_shop_id = st.shop_id
-SET sc.shop_name = st.shop_name
-WHERE (sc.shop_name IS NULL OR TRIM(sc.shop_name) = '')
-  AND sc.our_shop_id IS NOT NULL AND sc.our_shop_id <> 0
-  AND sc.date_taken IS NOT NULL
-  AND ((sc.sheet_name IN ('VVIP','VIP','NEW_ITEMS')
-        AND sc.date_taken >= (NOW() - INTERVAL 10 DAY))
-       OR (sc.sheet_name = 'LINKS_INPUT'
-           AND sc.date_taken >= (NOW() - INTERVAL 28 DAY)))
-```
-
-The two-pass approach ensures no rows are missed — the loop handles token-based lookups, the JOIN catches anything the loop missed using the ShopeeTokens table directly.
+**SQL Write (live behavior)**:
+Live script update: the current VM3 version performs row-wise updates with periodic batch commits; the older JOIN safety-net pass is no longer present.
 
 ---
 
@@ -336,7 +335,7 @@ Phase 2 processes these rows every run but they can never match any variation. P
 `model_patch_main(shop_names_by_shop_id)` accepts the parameter but never uses it internally.
 
 ### 4. Docstring vs Reality (Filter Mismatch)
-Function docstrings claim sheet_name and date filtering for all phases, but only Phase 3 actually enforces both filters. Phase 1 has date-only filtering. Phase 2 and 2B have no date or sheet filters.
+Live script behavior now applies sheet/date windows across enrichment phases: Phase 1 uses a 4-day date filter, and Phases 2/2B/3 use `7d` (`VVIP`/`VIP`/`NEW_ITEMS`) plus `28d` (`LINKS_INPUT`).
 
 ### 5. MySQL Deadlocks
 Observed in production (March 5 log — shop_id 422263284). Caused by concurrent pipeline scripts updating the same table. The script catches these as general exceptions and continues processing.

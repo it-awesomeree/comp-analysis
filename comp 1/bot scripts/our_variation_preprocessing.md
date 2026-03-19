@@ -1,8 +1,21 @@
 # our_variation_preprocessing.py — Comprehensive Documentation
 
 > **Script Location:** `VM3:C:\Users\Admin\Desktop\Shopee Comp My links Api\our_variation_preprocessing.py`
-> **Language:** Python 3.13 | **Lines:** 1,478 | **VM:** VM3 (current 5-script chain)
-> **Last verified:** 2026-03-18
+> **Language:** Python 3.13 | **Lines:** 1,713 | **Bytes:** 63,053 | **VM:** VM3 (current 5-script chain)
+> **Last modified (live):** 2026-03-13 12:04:49 | **Last verified:** 2026-03-19
+
+## Live Verification (2026-03-19)
+
+- Verified against VM3 live file: `C:\Users\Admin\Desktop\Shopee Comp My links Api\our_variation_preprocessing.py`
+- Scheduler context unchanged: Job #2 in the 4:00 PM VM3 pipeline
+- Important behavior corrections from live script:
+  - Live mode now runs a post-run blank audit with retry passes (`FINAL_AUDIT_MAX_PASSES = 2`)
+  - If in-scope blank `our_variation` rows remain after max passes, the script raises a fatal error and exits non-zero
+  - Candidate windows remain:
+    - `VVIP` / `VIP` / `NEW_ITEMS`: 30 days
+    - `LINKS_INPUT`: 28 days
+  - Matching thresholds remain permissive (`CONFIDENCE_THRESHOLD = 0`) with additional fuzzy lookup fallback (`LOOKUP_FUZZY_THRESHOLD = 0.88`)
+- Security note from live source: OpenAI key and DB passwords are currently hardcoded in this VM script and should be rotated/moved to environment variables in production hardening work
 
 ---
 

@@ -1,12 +1,23 @@
 # `Shopee-mylinks-sales-data-merged.py` — Complete Reference Documentation
 
 **Location:** `VM3: C:\Users\Admin\Desktop\Shopee Comp My links Api\Shopee-mylinks-sales-data-merged.py`
-**Size:** 85,958 bytes | 1,794 lines | Python 3.13 | **Last modified:** 2026-03-06 16:13:42
+**Size:** 100,552 bytes | 2,449 lines | Python 3.13 | **Last modified:** 2026-03-19 12:36:43
 **Target Table:** `AllBots.Shopee_Comp`
 **Database Host:** `34.142.159.230` (Google Cloud MySQL)
 **Dependencies:** `mysql-connector-python`, `requests` (all others are stdlib)
 
 ---
+
+## Live Verification (2026-03-19)
+
+- Verified against VM3 live file: `C:\Users\Admin\Desktop\Shopee Comp My links Api\Shopee-mylinks-sales-data-merged.py`
+- Scheduler context unchanged: Job #5 in the VM3 daily 4:00 PM chain
+- Critical live-script corrections:
+  - SiteGiant token handling is now dynamic, with refresh flow and DB persistence in `requestDatabase.SitegiantToken` (row id `1`)
+  - Added DB resilience helpers (`safe_db_connect`, `ensure_db_connection`) with session timeout hardening and periodic reconnect controls
+  - SiteGiant retry logic now includes adaptive recursive batch splitting (`SG_ENABLE_ADAPTIVE_BATCH_SPLIT`, `SG_MIN_BATCH_SIZE`) for transient failures
+  - SKU update filtering now includes a backfill path for recent rows with missing `sitegiant_sales_value_*` fields (`SG_BACKFILL_MISSING_DAYS = 30`)
+  - `PRIORITY_DAYS_LOOKBACK` in live constants is `10` days (header comments still mention `7`, which is stale)
 
 ## 1. Purpose & Overview
 

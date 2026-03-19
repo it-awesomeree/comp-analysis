@@ -9,10 +9,19 @@
 | **Location** | `C:\Users\Admin\Desktop\ca_sg\ca_my_products_sales_sync.py` |
 | **VM** | VM TT (`DESKTOP-KD0HLJU`, port 65504) |
 | **Pipeline Timeout** | 2 hours |
-| **File Size** | ~152K characters (~4,200 lines) |
+| **File Size** | 160,941 bytes (~4,244 lines) |
 | **Code Structure** | 24 numbered sections |
 | **Dependencies** | `requests`, `mysql-connector-python` (pip) |
 | **Imports** | `hashlib, os, hmac, json, logging, re, sys, time, random, threading, collections, concurrent.futures, datetime, typing, urllib.parse` |
+
+## Live Verification (2026-03-19)
+
+- Verified against VM TT live file: `C:\Users\Admin\Desktop\ca_sg\ca_my_products_sales_sync.py`
+- Scheduler context unchanged: Job #2 (`sales_sync`) in the midnight `ca_sg_pipeline.py` chain
+- Live-script checks confirmed:
+  - Four-phase structure remains intact (URL patch -> model patch -> Shopee daily sales sync -> SiteGiant sales sync)
+  - SiteGiant token refresh flow is active (`requestDatabase.SitegiantToken`, sentinel sync state shop_id `0`)
+  - No major logic drift found versus this documentation beyond metadata/size growth
 
 ---
 

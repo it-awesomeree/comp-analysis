@@ -1,9 +1,19 @@
 # `ca_shopee_listing_to_db.py` — Complete Script Documentation
 
 **Location:** `VM3 → C:\Users\Admin\Desktop\Shopee Comp My links Api\ca_shopee_listing_to_db.py`
-**Size:** 871 lines, 37,596 bytes | **Last modified:** 2026-03-13 16:50:30
+**Size:** 1,056 lines, 37,612 bytes | **Last modified:** 2026-03-19 10:00:39
 **Python:** 3.13 (`C:\Users\Admin\AppData\Local\Programs\Python\Python313\python.exe`)
 **Dependencies:** `mysql-connector-python`, `requests`
+
+## Live Verification (2026-03-19)
+
+- Verified against VM3 live file: `C:\Users\Admin\Desktop\Shopee Comp My links Api\ca_shopee_listing_to_db.py`
+- Pipeline trigger remains daily 4:00 PM (Task Scheduler task `Sales Data`)
+- Important behavior correction (live script):
+  - Job 1 now loads same-day scraped-category links (`VVIP`, `VIP`, `NEW_ITEMS`, `LINKS_INPUT`) for `target_date`
+  - It deletes same-day pure `NONE` rows that do not have a same-day scraped-category match (`delete_pure_none_rows_without_scraped_category_for_date`)
+  - During insert, it skips `NONE` rows for products without a same-day scraped-category match
+  - Script is still insert-only for product rows (no general update/delete refresh cycle), but `NONE` handling is now guarded by same-day scraped-category presence
 
 ---
 

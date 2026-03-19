@@ -1,12 +1,21 @@
 # Comp Variation Matcher Script (`ca_comp_variation_matcher.py`) — Full Analysis
 
-**Script**: `ca_comp_variation_matcher.py` (1,421 lines, ~50KB)  
+**Script**: `ca_comp_variation_matcher.py` (1,510 lines, 54,220 bytes)
 **Location**: `C:\Users\Admin\Desktop\ca_sg\ca_comp_variation_matcher.py`  
 **VM**: VM TT (`192.168.144.135`, WinRM port `65504`)  
 **Jira**: AW-299 (Melinda) / AW-266, related PR #353 (AW-332)  
 **Doc Reference**: Variation Matching Bot Technical Documentation V3.1
 
 ---
+
+## Live Verification (2026-03-19)
+
+- Verified against VM TT live file: `C:\Users\Admin\Desktop\ca_sg\ca_comp_variation_matcher.py`
+- Scheduler context unchanged: Script #3 in the midnight `ca_sg_pipeline.py` run
+- Critical correction:
+  - Live script default is `DRY_RUN = True`
+  - `--live` is effective and flips run mode to DB-writing live mode (`DRY_RUN = not args.live`)
+- Additional note: DB config in live source currently includes a hardcoded password value; rotate and move to environment variables in hardening work
 
 ## 1. Purpose
 
@@ -97,12 +106,12 @@ The pipeline runs scripts sequentially with **60s rest** between each. Each scri
 
 | Constant | Value | Line |
 |----------|-------|------|
-| `DRY_RUN` | `False` | 116 |
-| `MODEL_VERSION` | `v1-sonnet` | 117 |
+| `DRY_RUN` | `True` | 117 |
+| `MODEL_VERSION` | `v1-sonnet` | 118 |
 | `LOCAL_TZ` | `UTC+8` (Asia/Kuala_Lumpur) | 120 |
 | `LOG_DIR` | `comp_variation_matcher_logs` | 123 |
 
-**Important -- `DRY_RUN` default discrepancy**: The module-level default is `DRY_RUN = False` (line 116), meaning the script runs in **LIVE mode by default**. However, the `--live` flag's argparse help text (line 1351) says `"Commit to database (default: dry-run/preview mode)"`, and the `main()` function (line 1361) only does `if args.live: DRY_RUN = False` -- which is a no-op since it is already `False`. The `--live` flag has no effect. The docstring and argparse help text are outdated relative to the code.
+**Live mode behavior (verified)**: The module default is dry-run (`DRY_RUN = True`). In `main()`, mode is controlled by `DRY_RUN = not args.live`, so `--live` correctly enables DB writes.
 
 ---
 
@@ -301,7 +310,7 @@ If the LLM did not return results for some expected comp_variations, they are ba
 | **Batch** | No `--our-link`/`--comp-link` flags | Discovers all listing pairs, processes sequentially |
 | **Single pair** | `--our-link` + `--comp-link` (both required) | Processes one specific listing pair |
 | **Force rerun** | `--force-rerun` | Clears manual overrides, skips already-done filter, reprocesses everything |
-| **Live** | `--live` | Sets `DRY_RUN = False` -- **but this is already the default, so this flag is a no-op** |
+| **Live** | `--live` | Sets `DRY_RUN = False` (effective toggle from default dry-run mode) |
 
 **Note on DRY_RUN gating**: When `DRY_RUN = True`, the following operations are skipped:
 - `create_run()` returns 0 without INSERT
@@ -310,7 +319,7 @@ If the LLM did not return results for some expected comp_variations, they are ba
 - `store_results()` returns 0 without INSERT
 - Dry run prints a match results summary table instead
 
-Since `DRY_RUN = False` by default, all runs are live unless the module-level constant is manually changed.
+Since `DRY_RUN = True` by default, runs stay preview-only unless `--live` is passed.
 
 ---
 

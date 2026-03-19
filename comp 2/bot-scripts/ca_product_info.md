@@ -7,13 +7,23 @@
 | **Script** | `ca_product_info.py` (current VM TT version; renamed from `ca_my_products_info_refresh.py`) |
 | **Location (VM TT)** | `C:\Users\Admin\Desktop\ca_sg\ca_product_info.py` |
 | **Local source** | `C:\Users\User\Documents\Playground\repos\melinda-workspace\scripts\comp-analysis-pipeline\ca_my_products_info_refresh.py` |
-| **Lines** | ~1.2k |
+| **File Size** | 57,211 bytes |
+| **Lines** | 5,597 physical lines (~1.2k logical lines; file uses spacer formatting) |
 | **Language** | Python 3.13 |
 | **Pipeline Position** | Job #1 of 3 in `ca_sg_pipeline.py` (runs first) |
 | **Pipeline Task** | `ca_product_info_daily` (Windows Task Scheduler, daily at midnight MYT) |
 | **Timeout** | 2 hours (set by pipeline) |
 | **Typical Runtime** | ~5-6 minutes |
 | **Dependencies** | `mysql-connector-python`, `requests` |
+
+## Live Verification (2026-03-19)
+
+- Verified against VM TT live file: `C:\Users\Admin\Desktop\ca_sg\ca_product_info.py`
+- Scheduler trigger verified at midnight (`ca_product_info_daily` starts at `00:00` local time)
+- Live-flow corrections confirmed:
+  - Main run now includes `sync_existing_links_from_comp_data()` before discovery/refresh
+  - `Shopee_Comp_Data` remains authoritative for `sheet_name`/`region` reference maps, with existing `Shopee_My_Products` rows used as fallback
+  - Post-refresh `backfill_missing_sheet_names()` pass remains active and is part of normal completion flow
 
 ---
 
@@ -365,4 +375,4 @@ If this script fails, downstream scripts either process stale data or skip new p
 
 ---
 
-*Last verified: 2026-03-18 from current VM TT source at `C:\Users\Admin\Desktop\ca_sg\ca_product_info.py` (~1.2k lines)*
+*Last verified: 2026-03-19 from current VM TT source at `C:\Users\Admin\Desktop\ca_sg\ca_product_info.py` (57,211 bytes, 5,597 physical lines with spacer formatting)*

@@ -1,11 +1,21 @@
 # `shopee_comp_shopee_sales.py` — Complete Script Documentation
 
 **Location:** `VM3 → C:\Users\Admin\Desktop\Shopee Comp My links Api\shopee_comp_shopee_sales.py`
-**Size:** 2,435 lines, 98,794 bytes | **Last modified:** 2026-03-06 04:18:29
+**Size:** 2,743 lines, 98,794 bytes | **Last modified:** 2026-03-06 16:18:29
 **Language:** Python (self-contained, no local imports)
 **Dependencies:** `mysql-connector-python`, `requests`, `hmac`, `hashlib`, `json`, `re`, `os`, `time`, `datetime`, `logging`, `threading`, `traceback`
 
 ---
+
+## Live Verification (2026-03-19)
+
+- Verified against VM3 live file: `C:\Users\Admin\Desktop\Shopee Comp My links Api\shopee_comp_shopee_sales.py`
+- Scheduler trigger remains in the VM3 4:00 PM daily chain (`Sales Data` task)
+- Live behavior checks:
+  - Phase 1 URL patch still uses `sheet_name='NONE'` OR `date_taken >= NOW() - INTERVAL 4 DAY`
+  - Phase 2 model patch still uses `NONE` (all rows) + date windows for other sheets (`7d` for `VVIP/VIP/NEW_ITEMS`, `28d` for `LINKS_INPUT`)
+  - Phase 3 daily sales sync still writes rolling units and rolling revenue (`shopee_var_sales_*` + `shopee_var_value_*`)
+- No major logic drift was found beyond metadata/line-count growth
 
 ## 1. Purpose
 
