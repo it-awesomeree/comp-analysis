@@ -836,6 +836,172 @@ The display logic is **identical** — only the data source differs.
 
 ---
 
+## UI Elements & Icons Reference
+
+All icons are imported from `lucide-react`. The UI components are shared with Shopee MY (comp 1).
+
+### Row Background Colors
+
+| Level | Color | Hex | Left Border |
+|-------|-------|-----|-------------|
+| Level 1 (Product Group) | Warm off-white | `#FAF9F5` | None |
+| Level 2a (MY Variation) | Light gray | `#F4F3EE` | `3px solid #D97757` (orange) |
+| Level 2b (COMP Product) | Warm beige | `#F0ECE5` | `3px solid #6A9BCC` (blue) |
+| Level 3 (COMP Variation) | Dark beige | `#EAE5DC` | `3px solid #B0AEA5` (gray) |
+
+### Category Badges
+
+| Category | Border | Text | Background |
+|----------|--------|------|------------|
+| VVIP | `#D97757` | `#C15F3C` | `#FDF5F0` |
+| VIP | `#6A9BCC` | `#4A7BA8` | `#F0F5FA` |
+| Links Input | `#788C5D` | `#5E7045` | `#F2F5EE` |
+| New Items | `#B0AEA5` | `#6B6560` | `#F5F4F0` |
+| Uncategorized | `#D0CEC6` | `#6B6560` | `#FAF9F5` |
+
+### Column Group Header Colors
+
+| Group | Label | Color (Hex) |
+|-------|-------|-------------|
+| Product Identity | "Product Identity" | `#6B6560` Warm Charcoal |
+| Pricing & Profit | "Pricing & Profit" | `#788C5D` Claude Green |
+| Inventory | "Inventory" | `#C17A3C` Warm Amber |
+| Sales Performance | "Sales" | `#6A9BCC` Claude Blue |
+| Advertising | "Advertising" | `#D97757` Claude Orange |
+| Competitors | "Competitors" | `#9A7D6E` Warm Brown |
+| Notes & Actions | "Notes & Actions" | `#908E85` Mid-Gray |
+
+### Expand/Collapse Icons
+
+| Element | Icon | Open State | Closed State |
+|---------|------|-----------|-------------|
+| Level 1 MY expand | `▶` character (rotated) | `rotate-90`, `bg-[#FDF5F0] text-[#D97757]` | `text-gray-400 hover:text-[#D97757]` |
+| Level 1 COMP expand (Shopee MY mode) | `Eye` icon + pill | `bg-[#E2DDD5] text-[#5580A3] ring-1 ring-[#6A9BCC]` + `▾` arrow | `bg-[#F0ECE5] text-[#6A9BCC]` + `▾` arrow |
+| Level 1 COMP expand (default mode) | `Eye` / `EyeOff` | `Eye` icon shown | `EyeOff` icon shown |
+| Level 2a MY variation expand | `▶` character (rotated) | Same as Level 1 | Same as Level 1, only shown if has comp matches |
+| Level 2b COMP variation expand | `Eye` / `EyeOff` | `Eye` icon shown | `EyeOff` icon shown |
+| Indentation marker | `↳` arrow | Always shown at Level 2a | `text-[#D97757]` (orange) |
+
+### Similarity Score Icons
+
+| Score | Icon | Color | Clickable? | Action |
+|-------|------|-------|------------|--------|
+| `null` (no score) | `-` (gray dash) | Gray | No | — |
+| >= 90% | `CheckCircle2` | Green | No | — |
+| < 90% + reason exists + `isShopeeMy` | `XCircle` (hover shows `Ban`) | Red | **Yes** | Opens exclusion dialog |
+| < 90% + no reason or no callback | `XCircle` | Red | No | — |
+| Exclusion active | `Filter` icon (h-3 w-3) | Orange | No | Tooltip: "Product/Variation exclusions active" |
+
+### Price Comparison Icons (Default Layout)
+
+| Condition | Icon | Color |
+|-----------|------|-------|
+| Our price < COMP price | `TrendingDown` | `text-green-500` (we're cheaper) |
+| Our price > COMP price | `TrendingUp` | `text-red-500` (we're more expensive) |
+| Prices equal | `Minus` | `text-gray-400` |
+
+### Product Row Icons
+
+| Icon | Name | Color | Where Used | Purpose |
+|------|------|-------|-----------|---------|
+| `ExternalLink` | External Link | `text-[#6A9BCC]` | Product name, shop name | Opens URL in new tab |
+| `ImageIcon` | Image | Gray | Product name area | Opens image preview dialog |
+| `FileText` | File Text | `text-gray-600` | Product name area | Opens description dialog |
+| `Star` (★ character) | Star Rating | `text-yellow-400` | Product name area | Shows product rating |
+| `Pencil` | Pencil | Gray (hover-reveal) | MK Remark cell | Indicates inline-editable field |
+| `Check` | Checkmark | `text-green-600` | Inline edit fields | Confirm edit |
+
+### Action Buttons by Mode
+
+| Mode | Button | Icon | Color | Action |
+|------|--------|------|-------|--------|
+| **Normal** | Copy | `Clipboard` | Gray | Copy row JSON to clipboard |
+| **Normal** | Send to Fix | `MoveRight` | `text-[#6A9BCC]` | Move to Pending tab |
+| **Normal** | Select Competitors | `Users` | `text-[#6B6560]` | Open competitor selection modal |
+| **Normal** | Delete | `Trash` | `text-red-600` | Soft delete |
+| **Pending** | Restore | `Undo2` | `text-orange-600` | Restore to original tab |
+| **Pending** | Send to Fixed | `Send` | `text-green-600` | Move to Fixed tab |
+| **Pending** | Edit | `Edit` | `text-[#6A9BCC]` | Open edit modal |
+| **Pending** | Delete | `Trash` | `text-red-600` | Soft delete |
+| **Deleted** | Restore | `RotateCcw` | `text-green-600` | Restore from deleted |
+| **Deleted** | Permanent Delete | `Trash` | `text-red-600` | Hard delete (irreversible) |
+| **Fixed** | Restore | `Undo2` | `text-orange-600` | Restore to original tab |
+| **Fixed** | Delete | `Trash` | `text-red-600` | Soft delete |
+
+### Automated Remark Token Badges
+
+| Token | Full Name | Badge Color | Type |
+|-------|-----------|-------------|------|
+| `OSH` | Our Sales Are Higher | `bg-green-50 text-green-700 border-green-200` | Advantage |
+| `WHMS` | We Have More Stock | `bg-green-50 text-green-700 border-green-200` | Advantage |
+| `ORBTC` | Our Rating Better Than Comp | `bg-green-50 text-green-700 border-green-200` | Advantage |
+| `IP` | Increase Price (our < comp) | `bg-green-50 text-green-700 border-green-200` | Advantage |
+| `COOF` | Comp Out Of Stock | `bg-green-50 text-green-700 border-green-200` | Advantage |
+| `OSLTC` | Our Sales Lower Than Comp | `bg-red-50 text-red-700 border-red-200` | Issue |
+| `OSLC` | Our Stock Lower Than Comp | `bg-red-50 text-red-700 border-red-200` | Issue |
+| `ORLTC` | Our Rating Lower Than Comp | `bg-red-50 text-red-700 border-red-200` | Issue |
+| `DP` | Decrease Price (our > comp) | `bg-red-50 text-red-700 border-red-200` | Issue |
+| `OVOOS` | Our Variation Out Of Stock | `bg-red-50 text-red-700 border-red-200` | Issue |
+
+### Sort Direction Icons (Table Header)
+
+| Icon | Color | Meaning |
+|------|-------|---------|
+| `ArrowUp` | `text-[#D97757]` | Sorted ascending |
+| `ArrowDown` | `text-[#D97757]` | Sorted descending |
+| `Info` | `text-gray-400` | Tooltip with data source info |
+| `Filter` | Active: `bg-[#FDF5F0] text-[#D97757]`, Inactive: `text-gray-400` | Sales window dropdown trigger |
+
+### Filter Bar Icons (Page Header)
+
+| Filter | Icon | Active State |
+|--------|------|-------------|
+| Sales window | `CalendarClock` | Shows "N days" text |
+| Category | `Layers` | Icon only |
+| Competitor | `Users` | Shows "Yes" / "No" text |
+| Shop | `Store` | Shows shop name |
+| Remarks | (via component) | Icon only |
+| Date range | (via component) | Icon only |
+| Column manager | (via component) | Icon only |
+| Download | (via component) | Icon only |
+
+### Density Toggle
+
+| Option | Label | Row Padding | Font Size |
+|--------|-------|-------------|-----------|
+| Compact | "S" | 2px | 0.625rem |
+| Normal | "M" | 6px | 0.6875rem |
+| Comfortable | "L" | 12px | 0.75rem |
+
+Active: `bg-[#FDF5F0] text-[#C15F3C] border-[#E8C4B0]`
+Inactive: `text-gray-500 hover:text-gray-700 hover:bg-gray-50`
+
+### Loading / Error / Empty States
+
+| State | Display |
+|-------|---------|
+| Loading | "Loading products..." (gray text, centered) |
+| Error | Red error text + orange "Retry" button (`bg-[#D97757] text-white`) |
+| No results | "No products found matching your filters." (gray text, centered) |
+
+### Dialogs & Modals
+
+| Modal | Trigger | Purpose |
+|-------|---------|---------|
+| `EditProductModal` | Edit button (Pending mode) | Edit product fields |
+| `AddNewProductModal` | Add new button | Create new product |
+| `CompetitorSelectionModal` | Select Competitors button | Choose comp products |
+| `DeleteConfirmation` | Delete button | Confirm soft delete |
+| `PermanentDeleteConfirmation` | Permanent delete button | Confirm hard delete |
+| `BulkActionsSheet` | Selection checkbox (when items selected) | Bulk operations |
+| Image Preview Dialog | `ImageIcon` button | View product images with carousel |
+| Description Dialog | `FileText` button | View product description |
+| Exclusion AlertDialog | Clickable `XCircle` on similarity < 90% | Confirm exclusion |
+
+All dialogs use `z-[200]` to appear above sticky columns (`z-100`).
+
+---
+
 ## Data Flow
 
 ### Complete Request Lifecycle
