@@ -574,6 +574,96 @@ Raw DB rows
 
 ## Competitor Product Display Logic
 
+### How It Looks to the User (3-Level Hierarchy)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ LEVEL 1: Product Group Row                                    BG: #FAF9F5  │
+│                                                                             │
+│ [Category] [Shop] [ID] "MY Product Name ABC"         [MY ▼]  [COMP ▼]     │
+│                         (aggregated metrics)          toggle   toggle       │
+└─────────────────────────────────────────────────────────────────────────────┘
+       │                                              │
+       │ Click [MY ▼]                                 │ Click [COMP ▼]
+       ▼                                              ▼
+┌──────────────────────────────────┐    ┌──────────────────────────────────────┐
+│ LEVEL 2a: OUR Variations         │    │ LEVEL 2b: COMP Products              │
+│ BG: #F4F3EE                      │    │ BG: #F0ECE5                          │
+│ Border: 3px orange (#D97757)     │    │ Border: 3px blue (#6A9BCC)           │
+│                                  │    │                                      │
+│ ┌─ Variation "Color - Red" ────┐ │    │ ┌─ Comp Product "Rival X" ────────┐ │
+│ │  SKU: ABC-RED                │ │    │ │  Shop: CompetitorShop            │ │
+│ │  Price: RM29.90              │ │    │ │  Price: RM25.90                  │ │
+│ │  [▶ expand] ← only if has   │ │    │ │  Monthly Sales: 1,234            │ │
+│ │     matching comp variations │ │    │ │  [▶ expand] ← shows ALL comp    │ │
+│ └──────────────────────────────┘ │    │ │     variations for this product  │ │
+│                                  │    │ └──────────────────────────────────┘ │
+│ ┌─ Variation "Color - Blue" ───┐ │    │                                      │
+│ │  SKU: ABC-BLU                │ │    │ ┌─ Comp Product "Brand Y" ────────┐ │
+│ │  (no expand icon — no comps) │ │    │ │  Monthly Sales: 890              │ │
+│ └──────────────────────────────┘ │    │ │  [▶ expand]                      │ │
+└──────────────────────────────────┘    │ └──────────────────────────────────┘ │
+                                        │                                      │
+       │ Click [▶] on "Color - Red"     │ ┌─ Comp Product "Store Z" ────────┐ │
+       ▼                                │ │  (max 3 comp products shown)     │ │
+┌──────────────────────────────────┐    │ └──────────────────────────────────┘ │
+│ LEVEL 3: Matched Comp Variations │    └──────────────────────────────────────┘
+│ (matched to OUR "Color - Red")   │           │ Click [▶] on "Rival X"
+│ BG: alternating #FAF9F5/#F4F3EE  │           ▼
+│                                  │    ┌──────────────────────────────────────┐
+│ These are comp variations that   │    │ LEVEL 3: ALL Comp Variations         │
+│ the BOT matched to our "Red"     │    │ (for this comp product)              │
+│ variation via the                │    │ BG: #EAE5DC                          │
+│ Shopee_Variation_Match table     │    │ Border: 3px gray (#B0AEA5)           │
+│                                  │    │                                      │
+│ ┌─ Comp Var "Size S - Red" ───┐ │    │ ┌─ Comp Var "Size S" ──────────────┐ │
+│ │  Price: RM22.90              │ │    │ │  Price: RM22.90                  │ │
+│ │  Stock: 45                   │ │    │ │  Stock: 45                       │ │
+│ └──────────────────────────────┘ │    │ └──────────────────────────────────┘ │
+│                                  │    │                                      │
+│ ┌─ Comp Var "Size M - Red" ───┐ │    │ ┌─ Comp Var "Size M" ──────────────┐ │
+│ │  Price: RM22.90              │ │    │ │  Price: RM22.90                  │ │
+│ │  Stock: 30                   │ │    │ │  Stock: 30                       │ │
+│ └──────────────────────────────┘ │    │ └──────────────────────────────────┘ │
+└──────────────────────────────────┘    └──────────────────────────────────────┘
+```
+
+### Key Rules
+
+| Rule | Behavior |
+|------|----------|
+| **MY and COMP are mutually exclusive** | Opening MY closes COMP (and vice versa) for the same product group |
+| **Level 2a expand icon** | Only shown if that our-variation has matching comp variations in the DB |
+| **Level 2a → Level 3 (MY path)** | Shows only comp variations that the **bot matched** to that specific our-variation |
+| **Level 2b expand icon** | Always shown — opens ALL variations for that comp product |
+| **Level 2b → Level 3 (COMP path)** | Shows ALL variations for that comp product (not filtered by our-variation) |
+| **Max 3 comp products** | At Level 2b, only top 3 comp products shown (sorted by max monthly sales, ties included) |
+| **`"(no comp name)"` filtered out** | Comp products without a name are never shown |
+| **Closing a parent closes children** | Closing Level 2a/2b also closes all Level 3 rows underneath |
+
+### Variation Matching — Done by Bot, Not Frontend
+
+The mapping between "which comp variation belongs to which of our variations" is **NOT done by the frontend**. It is pre-computed by a bot and stored in the `Shopee_Variation_Match` table in the database.
+
+```
+Bot (offline process):
+  → Analyzes our variations vs comp variations
+  → Writes matches to Shopee_Variation_Match table
+
+Server (shared-products-route.ts):
+  → Reads Shopee_Variation_Match to assign comp variations to our variations
+  → Attaches mapping as compProductsForDisplay metadata on Product rows
+
+Frontend (grouped-rows.tsx):
+  → Just reads the pre-computed mapping
+  → Renders comp variations under the correct our-variation
+  → Does NOT do any matching logic itself
+```
+
+If no bot match exists, the server falls back to assigning all comp variations to the first our-variation.
+
+---
+
 ### Step 1: Database — Fetch All Comp Rows
 
 The SQL returns ALL competitor rows via LEFT JOIN — no filtering at the SQL level:
