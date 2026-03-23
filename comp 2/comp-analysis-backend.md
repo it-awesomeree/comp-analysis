@@ -62,7 +62,7 @@ AWESOMEREE-WEB-APP/
 ├── lib/
 │   ├── services/
 │   │   ├── shopee-vvip-products-repository.ts    # VVIP data access (~278 lines)
-│   │   ├── shopee-sg-products-repository.ts      # SG data access (~278 lines)
+│   │   ├── shopee-sg-products-repository.ts      # SG data access (~283 lines)
 │   │   ├── shopee-normalized-group-summary.ts    # Pre-computed summary tables (~350 lines)
 │   │   ├── shopee-products-enrichment.ts         # Server-side enrichment (shared, ~1000 lines)
 │   │   └── mysql-allbots.ts                      # AllBots DB connection wrapper
@@ -284,6 +284,7 @@ Body: { ourProduct, competitorProduct, remarks, sourceType }
 - Inserts into `Shopee_My_Products` + optionally `Shopee_Comp_Data`
 - Extracts `our_item_id` from URL for JOIN compatibility
 - Default: `sheet_name="VIP"`, `status="new"`, `last_page="Fixed/New"`
+- **Note**: Does NOT explicitly set `region` column — relies on DB default (typically `'MY'`)
 - Invalidates VVIP count cache
 
 #### PUT — Update Product
@@ -523,7 +524,7 @@ Counts are fetched alongside the main query:
 
 ## Repository Layer — SG
 
-### File: `lib/services/shopee-sg-products-repository.ts` (~278 lines)
+### File: `lib/services/shopee-sg-products-repository.ts` (~283 lines)
 
 **99% identical to VVIP repository.** The differences are:
 
@@ -536,7 +537,7 @@ Counts are fetched alongside the main query:
 | Refresh call | `refreshNormalizedGroupSummaryIfStale("vvip")` | `refreshNormalizedGroupSummaryIfStale("sg")` |
 | Function names | `fetchVvipProducts()`, etc. | `fetchSgProducts()`, etc. |
 | Date filter region | `const regionVal = region ?? "MY"` | `const regionVal = region ?? "SG"` |
-| Date filter JOIN | Uses `cd.our_item_id_extracted` | Uses `SUBSTRING_INDEX(TRIM(TRAILING '/' FROM c2.our_link), '/', -1)` |
+| Date filter JOIN | Uses `cd.our_item_id_extracted` | Uses `cd.our_item_id_extracted` (same as VVIP) |
 
 #### sgJoinForRegion(region?, useLatestPerProduct?) — Special Logic
 
@@ -544,17 +545,20 @@ Counts are fetched alongside the main query:
 function sgJoinForRegion(region?: string, useLatestPerProduct?: boolean): string {
   if (!region) return JOIN_BY_ITEM_ID;
   if (useLatestPerProduct) {
-    // Same derived table optimization as VVIP — MAX(date_taken) per product
-    return `LEFT JOIN (...cd_max...) LEFT JOIN ${CD} cd ON ... AND cd.date_taken = cd_max.latest_date`;
+    // Region-aware: MY uses NORMALIZED_LINK_EQ, SG uses our_item_id_extracted
+    const mainJoinCondition = region === "MY"
+      ? `${NORMALIZED_LINK_EQ} AND cd.region = 'MY'`
+      : `${CD_ITEM_ID} = mp.our_item_id AND cd.region = '${region}'`;
+    return `LEFT JOIN (...cd_max...) LEFT JOIN ${CD} cd ON ${mainJoinCondition} AND cd.date_taken = cd_max.latest_date`;
   }
   if (region === "MY") return `${JOIN_BY_LINK} AND cd.region = 'MY'`;  // String match for MY
   return `${JOIN_BY_ITEM_ID} AND cd.region = '${region}'`;             // Item ID match for SG/others
 }
 ```
 
-**Why different for MY?** Shopee MY URLs use `shopee.com.my` domain while SG uses `shopee.sg`. The `our_item_id_extracted` column works for same-region JOINs, but cross-region (MY comp data linked to SG products) needs string-based URL matching.
+**Why different for MY?** Shopee MY URLs use `shopee.com.my` domain while SG uses `shopee.sg`. The `our_item_id_extracted` column works for same-region JOINs, but cross-region (MY comp data linked to SG products) needs string-based URL matching. This applies to both the normal JOIN and the `useLatestPerProduct` derived table path.
 
-**`useLatestPerProduct`**: Same behavior as VVIP — only applied when no date filter active.
+**`useLatestPerProduct`**: Same behavior as VVIP — only applied when no date filter active. But SG's version is region-aware: it uses string-based JOIN for MY region and numeric JOIN for SG region even inside the derived table path.
 
 ---
 
@@ -568,7 +572,7 @@ function sgJoinForRegion(region?: string, useLatestPerProduct?: boolean): string
 | **Summary table** | `Shopee_VVIP_Group_Summary` | `Shopee_SG_Group_Summary` |
 | **JOIN condition** | `cd.our_item_id_extracted = mp.our_item_id AND cd.region = 'MY'` | `cd.our_item_id_extracted = mp.our_item_id AND cd.region = 'SG'` |
 | **Details JOIN (own region)** | `NORMALIZED_LINK_EQ` (string) | `our_item_id_extracted` (numeric) |
-| **Date filter subquery** | `cd.our_item_id_extracted` | `SUBSTRING_INDEX(...)` (string extraction) |
+| **Date filter subquery** | `cd.our_item_id_extracted` | `cd.our_item_id_extracted` (same as VVIP) |
 | **Data source** | `mp WHERE region='MY'` + `cd WHERE region='MY'` | `mp WHERE region='SG'` + `cd WHERE region='SG'` |
 | **Enrichment** | Shared `enrichShopeeProductRows()` | Same |
 | **Calculations** | Shared `shopee-history-calculations.ts` | Same |
@@ -778,28 +782,32 @@ All sort keys are mapped via `SORT_COLUMN_MAP` or `buildGroupOrderConfig()` — 
 Category DESC → Shop ASC → Date DESC → ProductID (mp.our_item_id) ASC
 ```
 
-All sort tiebreakers now use `mp.our_item_id` (Shopee product ID) instead of `mp.id` (auto-increment). This ensures products are grouped by their actual Shopee identity rather than insertion order.
+The **default sort** (when no sortKey specified) and **category sort** use `mp.our_item_id` (Shopee product ID) as tiebreaker. All other explicit sort keys use `mp.id` (auto-increment) as tiebreaker.
 
 #### Ungrouped Sort Map (15 keys)
 
 ```typescript
 {
-  my:               "mp.product_name, mp.our_variation, mp.our_item_id",
-  comp:             "cd.comp_product, cd.comp_variation, mp.our_item_id",
-  sku:              "mp.sku, mp.our_item_id",
-  date:             "cd.date_taken, mp.our_item_id",
-  id:               "mp.our_item_id",
-  category:         "CASE WHEN sheet_name='VVIP' THEN 4 ... END, shop_name_empty, shop_name_sort, cd.date_taken DESC, mp.our_item_id ASC",
-  shop:             "cd.comp_shop, mp.our_item_id",
-  priceMy:          "mp.our_price, mp.our_item_id",
-  salesMy:          "CAST(mp.our_sales AS SIGNED), mp.our_item_id",
-  stockMy:          "CAST(mp.our_stock AS SIGNED), mp.our_item_id",
-  priceComp:        "cd.comp_price, mp.our_item_id",
-  salesComp:        "CAST(cd.comp_sales AS SIGNED), mp.our_item_id",
-  compMonthlySales: "CAST(cd.comp_monthly_sales AS SIGNED), mp.our_item_id",
-  stockComp:        "CAST(cd.comp_stock AS SIGNED), mp.our_item_id",
-  remarks:          "mp.automated_remarks, mp.our_item_id",
+  my:               "mp.product_name, mp.our_variation, mp.id",
+  comp:             "cd.comp_product, cd.comp_variation, mp.id",
+  sku:              "mp.sku, mp.id",
+  date:             "cd.date_taken, mp.id",
+  id:               "mp.id",
+  category:         "CASE ... END, shop_name_empty, shop_name_sort, cd.date_taken DESC, mp.our_item_id ASC",
+  shop:             "cd.comp_shop, mp.id",
+  priceMy:          "mp.our_price, mp.id",
+  salesMy:          "CAST(mp.our_sales AS SIGNED), mp.id",
+  stockMy:          "CAST(mp.our_stock AS SIGNED), mp.id",
+  priceComp:        "cd.comp_price, mp.id",
+  salesComp:        "CAST(cd.comp_sales AS SIGNED), mp.id",
+  compMonthlySales: "CAST(cd.comp_monthly_sales AS SIGNED), mp.id",
+  stockComp:        "CAST(cd.comp_stock AS SIGNED), mp.id",
+  remarks:          "mp.automated_remarks, mp.id",
 }
+// Default (no sortKey): Category DESC → Shop ASC → Date DESC → mp.our_item_id ASC
+```
+
+**Note**: Only the default sort and category sort use `mp.our_item_id`. All other sorts use `mp.id` as tiebreaker.
 ```
 
 #### Grouped Sort — Aggregate Keys

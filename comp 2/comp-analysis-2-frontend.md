@@ -88,8 +88,8 @@ AWESOMEREE-WEB-APP/
 │       └── shopee-products/
 │           └── shared-products-route.ts          # Shared GET handler factory
 ├── lib/services/
-│   ├── shopee-vvip-products-repository.ts        # VVIP data access (~1,244 lines)
-│   ├── shopee-sg-products-repository.ts          # SG data access (~1,242 lines)
+│   ├── shopee-vvip-products-repository.ts        # VVIP data access (~278 lines)
+│   ├── shopee-sg-products-repository.ts          # SG data access (~283 lines)
 │   ├── shopee-normalized-group-summary.ts        # Pre-aggregated summaries (NEW, ~281 lines)
 │   ├── shopee-products-enrichment.ts             # Shared enrichment pipeline (~710 lines)
 │   └── in-memory-stale-cache.ts                  # Generic stale-while-revalidate cache (NEW, ~95 lines)
@@ -153,11 +153,12 @@ Additional protection:
 ### Hardcoded Shop Options (27 shops)
 
 ```
-Adelmar, Atlusrack, BahEmas, BainsJewelry, CloudBear, Degaia,
-Dollfayce, EasyBuyMY, FluxClothing, Get Any, Inflatable, KariFM,
-Lil Beanie, Luluna, Nartistry, NewGem, Petit Toute, Posh Cutlery,
-Primesgold, Queenswood, Reno, Runshogun, SkyBall, Taftees,
-Tuffsteel, VetPlanet, Vistella
+Adelmar, Atlusrack, BahEmas, Bidarimu, Chairsy, das.nature,
+das.nature2, dutchgaming, Emas Gift, EncikPlastic, Flashree,
+FynnKoffer, Gameniture, Hiranai, JagerHelmet, KarlMobel,
+KEDAI GARDEN, Lenza Eyewear, Lovento, Luxbin, MasonGym,
+MurahYa, Secret Racer, Solaree, Stationarylah, ValueSnap,
+Wilmermobel
 ```
 
 ---
