@@ -1,1 +1,307 @@
+# Job Cycle — Documentation
 
+**Purpose**: Track competitive analysis (CA) workload per 28-day cycle. Each cycle contains daily scraping jobs assigned to weekdays. Users fill in the count (#), mark rows as done, and payment is auto-calculated.
+
+**URL**: `/analytics/job-cycle`
+**Jira**: [AW-382](https://awesomeree.atlassian.net/browse/AW-382)
+**Repo**: `awesomeree-web-app` (main branch)
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Cycle Rules](#cycle-rules)
+3. [UI Layout](#ui-layout)
+4. [Table Columns](#table-columns)
+5. [User Actions](#user-actions)
+6. [Audit Trail (History Logs)](#audit-trail-history-logs)
+7. [File Structure](#file-structure)
+8. [API Endpoints](#api-endpoints)
+9. [Database Schema](#database-schema)
+10. [Job Type Schedule](#job-type-schedule)
+11. [Business Logic](#business-logic)
+
+---
+
+## Overview
+
+The Job Cycle page sits under Analytics → Job Cycle. It tracks how many items were scraped/processed per day across 28-day cycles. Each cycle has rows for each weekday job (VVIP, Links Input, New Items, etc.). The user edits the # (count) column after completing work, marks the row as Done, and the system auto-calculates payment at $0.01 per item.
+
+---
+
+## Cycle Rules
+
+### Cycle 17 (Historical)
+- Hardcoded from Google Sheet data
+- Start: 16/02/2026, End: 13/03/2026
+- 23 seed rows with pre-filled counts
+- Job types include legacy types: VIP, 5001-6250, 6251-7500
+
+### Cycle 18 Onwards (Auto-Generated)
+- Start date: Cycle 18 = 16/03/2026
+- Each subsequent cycle starts exactly **28 days** after the previous
+- End date displayed on cycle card = last Friday within the 28-day window
+- Rows auto-generated based on fixed weekday schedule (see [Job Type Schedule](#job-type-schedule))
+- Weekends (Sat/Sun) are skipped — no rows generated
+
+### Cycle Start Date Formula
+```
+Cycle 17: Feb 16, 2026 (hardcoded)
+Cycle 18: Mar 16, 2026
+Cycle N (N >= 18): Mar 16, 2026 + (N - 18) × 28 days
+```
+
+---
+
+## UI Layout
+
+### 1. Cycle Cards (Top)
+Horizontal scrollable row of cycle cards. Click any card to view that cycle.
+
+**Each card shows:**
+- Cycle number and date range (DD/MM/YYYY — DD/MM/YYYY)
+- Total # (sum of all visible rows' count)
+- Payment (Total # × $0.01)
+- Completion progress bar (done rows / total visible rows)
+
+**Active card**: Orange border, expanded with stats
+**Inactive cards**: Gray border, compact
+**"+ New Cycle" button**: Dashed border card at the end, generates the next cycle
+
+### 2. Stats Bar (3 Cards)
+Three stat cards below the cycle cards:
+- **Total #** — sum of all visible (non-skipped) row counts
+- **Payment** — Total # × $0.01, displayed as $X.XX
+- **Completion** — percentage + "X/Y rows" subtitle
+
+### 3. Detail Table
+Fixed-width table with 7 columns, grouped by weeks (Week 1, Week 2, Week 3, Week 4).
+
+Each week separator has an **"+ Add Row"** button on the right.
+
+### 4. Table Footer
+Shows totals: Total count and done/total count.
+
+---
+
+## Table Columns
+
+| Column | Width | Editable | Description |
+|--------|-------|----------|-------------|
+| **Date** | 15% | No | DD/MM/YYYY format. Hover shows "Created" info for manually added rows |
+| **Day** | 9% | No | MON, TUE, WED, THU, FRI |
+| **Job** | 22% | No | Color-coded badge (VVIP, Links Input, New Items, VVIP SG, New Items SG) |
+| **#** | 16% | Yes | Number input. Saves on blur or Enter. Green flash = saved, red flash = error. Hover shows last change history |
+| **Cycle** | 10% | No | Cycle number |
+| **Done** | 14% | Yes | Checkbox. Orange when checked. Hover shows last change history |
+| **Skip** | 8% | Yes (click X) | X button to hide the row. Eye icon in header toggles show/hide skipped rows |
+
+### Row States
+- **Normal row**: Alternating white/cream background
+- **Done row**: Gray background, muted text
+- **Skipped row** (hidden by default, toggle to show): Gray background, strikethrough text, all fields read-only except Skip history hover
+
+---
+
+## User Actions
+
+### Edit # (Count)
+- Click the number input → type new value → press Enter or click away
+- Green flash = saved successfully
+- Red flash = save failed
+- If value didn't change, no update is sent (no-change guard)
+
+### Toggle Done
+- Click the checkbox to mark/unmark as done
+- Orange filled = done, empty = not done
+
+### Skip Row
+- Click the X button on any row to hide it
+- Skipped rows are excluded from Total # and Payment calculations
+- Toggle "Show Hidden" (eye icon in Skip column header) to see skipped rows
+- Skipped rows count shown as "(N)" next to the eye icon
+
+### Add Row
+- Click "+ Add Row" on any week separator
+- Select date and job type from dropdowns
+- Click "Add" to insert, "Cancel" to close
+- Available job types: VVIP, Links Input, New Items, VVIP SG, New Items SG
+
+### Generate New Cycle
+- Click the "+ New Cycle" card
+- Auto-generates all weekday rows for the next 28-day cycle
+- Uses the fixed weekly schedule (see below)
+
+---
+
+## Audit Trail (History Logs)
+
+All changes are logged to the `history_logs` table. Users can see the last change by hovering on specific cells.
+
+| Hover on | Shows | Log Action |
+|----------|-------|------------|
+| **Date** column | Who manually added this row and when | `create_row` |
+| **#** column | Who changed the count, old → new value | `update_count` |
+| **Done** checkbox | Who toggled done, Done/Not Done | `update_done` |
+| **"skipped"** label (in Show Hidden mode) | Who skipped the row, Visible → Skipped | `update_hidden` |
+
+### History Popover
+- Appears on hover after 400ms delay
+- Shows: "By [email]", "At DD/MM/YYYY, HH:MM:SS", Old/New values
+- For create_row: Shows "Created" title + job type
+- Fetches from `GET /api/job-cycle/:id` (last 20 entries)
+
+### No-Change Guard
+If a user edits # to the same value (e.g., 200 → 200), no update or log is created. The API returns `{ success: true, noChange: true }`.
+
+---
+
+## File Structure
+
+```
+app/
+  analytics/
+    job-cycle/
+      page.tsx                    # Page entry point (renders JobCycleTab)
+      lib/
+        api.ts                    # Client-side API helpers (fetch, patch, add, generate)
+        types.ts                  # TypeScript interfaces (JobCycleRow, HistoryEntry)
+        utils.ts                  # Date calculations, job type config, colors
+  api/
+    job-cycle/
+      route.ts                    # GET cycles/rows, POST add row
+      [id]/
+        route.ts                  # PATCH update (count/done/hidden), GET history
+      generate/
+        route.ts                  # POST generate new cycle
+components/
+  job-cycle/
+    JobCycleTab.tsx               # Main UI component (~670 lines)
+  analysis-top-navigation.tsx     # Nav bar (Job Cycle link added here)
+migrations/
+  allbots/
+    20260318120000_create_job_cycle_ca.sql  # Table creation + Cycle 17 seed
+```
+
+---
+
+## API Endpoints
+
+### GET /api/job-cycle
+**No params**: Returns all distinct cycle numbers `[17, 18, 19, ...]`
+**With `?cycle=17`**: Returns all rows for that cycle, ordered by date + job type
+
+### POST /api/job-cycle
+Add a single row manually.
+```json
+{ "cycle": 18, "job_date": "2026-03-20", "job_type": "VVIP" }
+```
+Returns updated cycle rows. Logs `create_row` to history.
+
+### POST /api/job-cycle/generate
+Generate all rows for a new cycle (Cycle 18+).
+```json
+{ "cycle": 19 }
+```
+Uses `INSERT IGNORE` to prevent duplicates. Returns generated rows.
+
+### PATCH /api/job-cycle/:id
+Update one field per request. Only one of `count`, `done`, or `hidden` allowed.
+```json
+{ "count": 1500 }
+// or
+{ "done": true }
+// or
+{ "hidden": true }
+```
+Returns `{ success: true }` or `{ success: true, noChange: true }` if value didn't change.
+
+### GET /api/job-cycle/:id
+Returns last 20 history log entries for this row from `history_logs` table.
+
+---
+
+## Database Schema
+
+**Table**: `AllBots.job_cycle_ca`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INT AUTO_INCREMENT | Primary key |
+| cycle | INT NOT NULL | Cycle number (17, 18, 19, ...) |
+| job_date | DATE NOT NULL | The date of the job |
+| job_type | VARCHAR(50) NOT NULL | Job type name (VVIP, Links Input, etc.) |
+| count | INT DEFAULT 0 | Number of items processed |
+| done | TINYINT(1) DEFAULT 0 | 1 = done, 0 = not done |
+| hidden | TINYINT(1) DEFAULT 0 | 1 = skipped/hidden, 0 = visible |
+| updated_at | TIMESTAMP | Auto-updates on any change |
+
+**Unique Key**: `uq_row (cycle, job_date, job_type)` — prevents duplicate rows
+
+**Audit Logs**: Stored in `AllBots.history_logs` with `model_name = 'job_cycle_ca'`
+
+---
+
+## Job Type Schedule
+
+### Weekly Schedule (Cycle 18+)
+
+| Day | Job Types |
+|-----|-----------|
+| Monday | VVIP |
+| Tuesday | Links Input |
+| Wednesday | New Items |
+| Thursday | Links Input |
+| Friday | VVIP SG, New Items SG |
+| Saturday | — (skipped) |
+| Sunday | — (skipped) |
+
+### Job Type Colors (UI Badges)
+
+| Job Type | Badge Color |
+|----------|-------------|
+| VVIP | Orange-red (#C15F3C on #FDF5F0) |
+| VIP | Orange-red (#C15F3C on #FDF5F0) |
+| Links Input | Green (#5E7045 on #F2F5EE) |
+| New Items | Blue (#4A7BA8 on #F0F5FA) |
+| VVIP SG | Brown-gold (#854F0B on #FAF5EE) |
+| New Items SG | Brown-gold (#854F0B on #FAF5EE) |
+
+### Add Row Dropdown Options
+Only these 5 job types are available when manually adding rows:
+VVIP, Links Input, New Items, VVIP SG, New Items SG
+
+(Legacy types VIP, 5001-6250, 6251-7500 exist in Cycle 17 seed data but are not available for new rows)
+
+---
+
+## Business Logic
+
+### Payment Calculation
+```
+Payment per row = count × $0.01
+Total Payment = sum of all visible (non-hidden) rows' count × $0.01
+```
+
+### Completion Percentage
+```
+Completion = (done visible rows / total visible rows) × 100
+```
+Skipped (hidden) rows are excluded from both numerator and denominator.
+
+### Cycle Generation
+When "+ New Cycle" is clicked:
+1. Next cycle number = max existing cycle + 1
+2. Start date calculated from formula
+3. Loop through 28 days, check weekday, assign jobs from schedule
+4. Bulk INSERT with `INSERT IGNORE` (safe to retry)
+5. Returns all generated rows
+
+### Input Validation (PATCH)
+- Only one field per request (count OR done OR hidden)
+- count: must be non-negative integer
+- done: must be boolean
+- hidden: must be boolean
+- Row must exist (404 if not found)
+- No-change guard: if value is same as current, returns `noChange: true` without updating
