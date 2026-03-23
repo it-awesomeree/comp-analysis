@@ -1,4 +1,4 @@
-# Comp 2 (VVIP + SG) — Backend Documentation
+# Comp Analysis 2 — Backend Documentation (VVIP & SG)
 
 **Purpose**: Comprehensive documentation of the backend architecture for the Shopee MY VVIP and Shopee SG Competitive Analysis pages — API routes, repository layer, shared utilities, database schema, and how region isolation works.
 
