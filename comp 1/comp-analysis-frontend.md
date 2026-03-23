@@ -529,7 +529,7 @@ The core display component rendering the 3-level hierarchical table.
 #### Level 1: Product Group Row
 - **Background**: `#FAF9F5` (off-white)
 - **Columns**: Category (select dropdown), Shop (link), Product ID, Select/Expand toggle, MY Product name + images, SKU placeholder
-- **Metrics (aggregated)**: Price, SiteGiant Sales, MY Stock, COMP count
+- **Metrics (aggregated)**: MY Price, Profit, Profit Margin %, ISR %, Projected Stockout Date, Lost Value, SiteGiant Sales, SG Sales Value, Shopee Sales, SP Sales Value, COMP count
 - **COMP summary**: Count badge + eye icon toggle
 - **Expand behavior**: Click MY toggle opens variations (closes COMP), click COMP toggle opens competitor groups (closes MY). **Mutually exclusive** per group key.
 - **Category**: Determined by `getHighestPriorityCategory()` — highest priority from all rows in group
