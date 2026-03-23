@@ -61,8 +61,8 @@ AWESOMEREE-WEB-APP/
 │       └── analyze/route.ts           # Gemini AI analysis (shared, region-agnostic)
 ├── lib/
 │   ├── services/
-│   │   ├── shopee-vvip-products-repository.ts    # VVIP data access (~1244 lines)
-│   │   ├── shopee-sg-products-repository.ts      # SG data access (~1242 lines)
+│   │   ├── shopee-vvip-products-repository.ts    # VVIP data access (~278 lines)
+│   │   ├── shopee-sg-products-repository.ts      # SG data access (~278 lines)
 │   │   ├── shopee-normalized-group-summary.ts    # Pre-computed summary tables (~350 lines)
 │   │   ├── shopee-products-enrichment.ts         # Server-side enrichment (shared, ~1000 lines)
 │   │   └── mysql-allbots.ts                      # AllBots DB connection wrapper
@@ -207,6 +207,7 @@ Pre-computed aggregates for VVIP page. Refreshed every 10 minutes.
 | `status` | VARCHAR | Product status |
 | `product_name` | VARCHAR | Group key |
 | `max_id` | INT | Latest row ID |
+| `min_our_item_id` | BIGINT UNSIGNED | **Shopee product ID (tiebreaker for sort)** — auto-migrated via `ensureSummarySchema()` |
 | `max_date_taken` | DATE | Most recent scrape date |
 | `min_comp_product` | VARCHAR | First competitor name |
 | `min_sku` | VARCHAR | First SKU |
@@ -388,7 +389,7 @@ Uses **Google Gemini 2.0 Flash** for AI-powered competitor analysis.
 
 ## Repository Layer — VVIP
 
-### File: `lib/services/shopee-vvip-products-repository.ts` (~1244 lines)
+### File: `lib/services/shopee-vvip-products-repository.ts` (~278 lines)
 
 #### Table Constants
 
@@ -408,9 +409,24 @@ const JOIN_BY_ITEM_ID = `LEFT JOIN Shopee_Comp_Data cd ON cd.our_item_id_extract
 const NORMALIZED_LINK_EQ = "TRIM(TRAILING '/' FROM cd.our_link) = TRIM(TRAILING '/' FROM mp.our_link)";
 ```
 
-**`vvipJoinForRegion(region?)`**:
+**`vvipJoinForRegion(region?, useLatestPerProduct?)`**:
 - No region: `JOIN_BY_ITEM_ID` (no filter)
-- With region: `JOIN_BY_ITEM_ID AND cd.region = '<region>'`
+- With region, no latest filter: `JOIN_BY_ITEM_ID AND cd.region = '<region>'`
+- With region + `useLatestPerProduct = true`: **Derived table optimization** — creates a subquery `cd_max` that finds `MAX(date_taken)` per `our_item_id_extracted`, then double-JOINs to return only the latest comp data per product (~3x row reduction):
+
+```sql
+LEFT JOIN (
+  SELECT our_item_id_extracted, MAX(date_taken) AS latest_date
+  FROM Shopee_Comp_Data WHERE region = 'MY'
+  GROUP BY our_item_id_extracted
+) cd_max ON cd_max.our_item_id_extracted = mp.our_item_id
+LEFT JOIN Shopee_Comp_Data cd
+  ON cd.our_item_id_extracted = mp.our_item_id
+  AND cd.region = 'MY'
+  AND cd.date_taken = cd_max.latest_date
+```
+
+**When `useLatestPerProduct` is used**: Only when `!filters.dateFrom && !filters.dateTo` — i.e., when no date filter is active. When a date filter IS active, the derived table is skipped so all comp data is available for accurate date-based filtering.
 
 **Key insight**: Always uses `our_item_id_extracted` (indexed integer) for the JOIN. Never falls back to string matching on the main query — only on the details endpoint for MY region.
 
@@ -507,7 +523,7 @@ Counts are fetched alongside the main query:
 
 ## Repository Layer — SG
 
-### File: `lib/services/shopee-sg-products-repository.ts` (~1242 lines)
+### File: `lib/services/shopee-sg-products-repository.ts` (~278 lines)
 
 **99% identical to VVIP repository.** The differences are:
 
@@ -522,17 +538,23 @@ Counts are fetched alongside the main query:
 | Date filter region | `const regionVal = region ?? "MY"` | `const regionVal = region ?? "SG"` |
 | Date filter JOIN | Uses `cd.our_item_id_extracted` | Uses `SUBSTRING_INDEX(TRIM(TRAILING '/' FROM c2.our_link), '/', -1)` |
 
-#### sgJoinForRegion(region?) — Special Logic
+#### sgJoinForRegion(region?, useLatestPerProduct?) — Special Logic
 
 ```typescript
-function sgJoinForRegion(region?: string): string {
+function sgJoinForRegion(region?: string, useLatestPerProduct?: boolean): string {
   if (!region) return JOIN_BY_ITEM_ID;
+  if (useLatestPerProduct) {
+    // Same derived table optimization as VVIP — MAX(date_taken) per product
+    return `LEFT JOIN (...cd_max...) LEFT JOIN ${CD} cd ON ... AND cd.date_taken = cd_max.latest_date`;
+  }
   if (region === "MY") return `${JOIN_BY_LINK} AND cd.region = 'MY'`;  // String match for MY
   return `${JOIN_BY_ITEM_ID} AND cd.region = '${region}'`;             // Item ID match for SG/others
 }
 ```
 
 **Why different for MY?** Shopee MY URLs use `shopee.com.my` domain while SG uses `shopee.sg`. The `our_item_id_extracted` column works for same-region JOINs, but cross-region (MY comp data linked to SG products) needs string-based URL matching.
+
+**`useLatestPerProduct`**: Same behavior as VVIP — only applied when no date filter active.
 
 ---
 
@@ -578,6 +600,10 @@ Pre-computes group-level aggregates so the main query can sort by aggregate colu
 - **No active filters**: no search, customLink, shopName, shopId, date range, sheet name filter, insight filters, remarks
 - Sort key is supported by summary table
 
+#### Schema Auto-Migration
+
+`ensureSummarySchema()` automatically adds the `min_our_item_id BIGINT UNSIGNED` column to both summary tables if it doesn't exist. Runs once per process lifetime (flag: `summarySchemaEnsured`). Catches errno 1060 (duplicate column) gracefully.
+
 #### Staleness Check
 
 - TTL: **10 minutes**
@@ -591,7 +617,7 @@ The refresh rebuilds the entire summary table using `REPLACE INTO`:
 
 ```sql
 REPLACE INTO Shopee_VVIP_Group_Summary (
-  status, product_name, max_id, max_date_taken,
+  status, product_name, max_id, min_our_item_id, max_date_taken,
   min_comp_product, min_sku, row_count,
   category_rank, shop_name_empty, min_shop_name,
   sg_sales_total_7d, ..., sp_value_total_90d,
@@ -599,7 +625,7 @@ REPLACE INTO Shopee_VVIP_Group_Summary (
 )
 SELECT
   mp.status, mp.product_name, MAX(mp.id), MAX(cd.date_taken),
-  MIN(cd.comp_product), MIN(mp.sku), COUNT(DISTINCT mp.id),
+  MIN(mp.our_item_id), MIN(cd.comp_product), MIN(mp.sku), COUNT(DISTINCT mp.id),
   MAX(CASE WHEN sheet_name='VVIP' THEN 4 ... END),
   MIN(CASE WHEN shop_name IS NULL THEN 1 ELSE 0 END),
   MIN(LOWER(TRIM(mp.shop_name))),
@@ -639,6 +665,8 @@ This matches the `shopeeValueRaw` fallback logic in `shopee-history-calculations
 | `spSalesValue` | `sp_value_total_{shopeeWindow}d` |
 
 Other sort keys (my, comp, sku, date, category, shop, priceMy, salesMy, etc.) use pre-computed columns: `min_comp_product`, `min_sku`, `max_date_taken`, `category_rank`, `min_our_price`, `max_our_sales`, etc.
+
+**Default summary sort**: `min_our_item_id ASC` (not `max_id DESC`). This uses the Shopee product ID as tiebreaker for consistent grouping.
 
 ---
 
@@ -742,25 +770,35 @@ Lightweight wrapper around the AllBots database connection.
 
 All sort keys are mapped via `SORT_COLUMN_MAP` or `buildGroupOrderConfig()` — never interpolated directly.
 
+#### Default Sort Order
+
+**Changed in PR #747**: The default sort is now:
+
+```
+Category DESC → Shop ASC → Date DESC → ProductID (mp.our_item_id) ASC
+```
+
+All sort tiebreakers now use `mp.our_item_id` (Shopee product ID) instead of `mp.id` (auto-increment). This ensures products are grouped by their actual Shopee identity rather than insertion order.
+
 #### Ungrouped Sort Map (15 keys)
 
 ```typescript
 {
-  my:               "mp.product_name, mp.our_variation, mp.id",
-  comp:             "cd.comp_product, cd.comp_variation, mp.id",
-  sku:              "mp.sku, mp.id",
-  date:             "cd.date_taken, mp.id",
-  id:               "mp.id",
-  category:         "CASE WHEN sheet_name='VVIP' THEN 4 ... END, shop_name_empty, shop_name_sort",
-  shop:             "cd.comp_shop, mp.id",
-  priceMy:          "mp.our_price, mp.id",
-  salesMy:          "CAST(mp.our_sales AS SIGNED), mp.id",
-  stockMy:          "CAST(mp.our_stock AS SIGNED), mp.id",
-  priceComp:        "cd.comp_price, mp.id",
-  salesComp:        "CAST(cd.comp_sales AS SIGNED), mp.id",
-  compMonthlySales: "CAST(cd.comp_monthly_sales AS SIGNED), mp.id",
-  stockComp:        "CAST(cd.comp_stock AS SIGNED), mp.id",
-  remarks:          "mp.automated_remarks, mp.id",
+  my:               "mp.product_name, mp.our_variation, mp.our_item_id",
+  comp:             "cd.comp_product, cd.comp_variation, mp.our_item_id",
+  sku:              "mp.sku, mp.our_item_id",
+  date:             "cd.date_taken, mp.our_item_id",
+  id:               "mp.our_item_id",
+  category:         "CASE WHEN sheet_name='VVIP' THEN 4 ... END, shop_name_empty, shop_name_sort, cd.date_taken DESC, mp.our_item_id ASC",
+  shop:             "cd.comp_shop, mp.our_item_id",
+  priceMy:          "mp.our_price, mp.our_item_id",
+  salesMy:          "CAST(mp.our_sales AS SIGNED), mp.our_item_id",
+  stockMy:          "CAST(mp.our_stock AS SIGNED), mp.our_item_id",
+  priceComp:        "cd.comp_price, mp.our_item_id",
+  salesComp:        "CAST(cd.comp_sales AS SIGNED), mp.our_item_id",
+  compMonthlySales: "CAST(cd.comp_monthly_sales AS SIGNED), mp.our_item_id",
+  stockComp:        "CAST(cd.comp_stock AS SIGNED), mp.our_item_id",
+  remarks:          "mp.automated_remarks, mp.our_item_id",
 }
 ```
 
@@ -866,6 +904,10 @@ The `NOT EXISTS` fallback ensures everything shows if no categorized products ha
 
 Both repositories use `referencesCompTable()` to check if the WHERE/ORDER clause actually needs the comp table. When it doesn't (e.g., filtering only by mp columns), the Phase 1 names query skips the LEFT JOIN entirely — significantly faster for unfiltered paginated browsing.
 
+### Latest-Date Derived Table (PR #747)
+
+When no date filter is active, `useLatestPerProduct = true` triggers a derived table JOIN that pre-selects only the latest `date_taken` per product from `Shopee_Comp_Data`. This reduces the result set by ~3x compared to fetching all historical comp rows and deduplicating client-side.
+
 ---
 
 ## Security
@@ -927,13 +969,19 @@ Repository (shopee-vvip-products-repository.ts):
     |                 [WHERE mp.region='MY' AND ...] GROUP BY mp.product_name
     |                 ORDER BY [sort] LIMIT 51 OFFSET 0
     |
+    |-- Determine JOIN strategy
+    |   No date filter? -> useLatestPerProduct = true (derived table, ~3x fewer rows)
+    |   Date filter active? -> useLatestPerProduct = false (all comp data needed)
+    |
     |-- Phase 2: All rows for those products
     |   SELECT [35 columns + 3 window columns]
     |   FROM Shopee_My_Products mp
+    |   [derived table cd_max if useLatestPerProduct]
     |   LEFT JOIN Shopee_Comp_Data cd
     |     ON cd.our_item_id_extracted = mp.our_item_id AND cd.region = 'MY'
+    |     [AND cd.date_taken = cd_max.latest_date if useLatestPerProduct]
     |   WHERE [filters] AND mp.product_name IN ('Product A', 'Product B', ...)
-    |   ORDER BY FIELD(mp.product_name, ...), mp.id DESC
+    |   ORDER BY FIELD(mp.product_name, ...), mp.our_item_id ASC
     |
     \-- Return { rows, total, groupTotal, debug }
     |

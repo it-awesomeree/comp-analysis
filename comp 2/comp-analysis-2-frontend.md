@@ -965,6 +965,25 @@ All icons are imported from `lucide-react`. The UI components are shared with Sh
 | Column manager | (via component) | Icon only |
 | Download | (via component) | Icon only |
 
+### Filter Info Line (PR #747)
+
+Displays active filter summary below the filter bar:
+
+```
+Filtered: All Categories (30d)
+Filtered: VVIP, Competitors: Yes (7d)
+```
+
+- Shows which categories/filters are active
+- Appends sales window suffix in parentheses: `(7d)`, `(30d)`, `(90d)`
+- Updates in real-time as filters change
+
+### Clear Category Button (PR #747)
+
+- Clicking "All Categories" checkbox resets category selection to show all
+- `clearCategorySelection()` calls `handleCategoryChange([])` with empty array
+- `handleClearSelection()` clears bulk checkbox selections (`setSelectedProducts(new Set())`)
+
 ### Density Toggle
 
 | Option | Label | Row Padding | Font Size |
@@ -1071,6 +1090,8 @@ The VVIP and SG pages were returning intermittent HTTP 500 errors due to:
 | **Stale response discard** | Page (request ID refs) | Prevents stale data from overwriting fresh data |
 | **Parallel enrichment** | Enrichment pipeline | `Promise.all` for costing + inventory + vouchers |
 | **Fire-and-forget backfill** | Enrichment | Voucher backfill doesn't block page load |
+| **Latest-date derived table** (PR #747) | Repository JOIN | ~3x row reduction when no date filter active — only latest comp scrape per product fetched |
+| **Default sort: Category→Shop→Date→ProductID** (PR #747) | Repository | Deterministic grouping using `our_item_id` instead of auto-increment `id` |
 | **LRU count cache** (120s TTL) | Repository | Avoids re-running expensive COUNT queries |
 
 ---
